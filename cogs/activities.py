@@ -1,9 +1,8 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import database
 from utils.logger import send_log
 from datetime import datetime, timedelta
-from discord.ext import tasks
 
 
 activity_messages = {}
@@ -23,73 +22,171 @@ ROLES_ORDER = [
 ]
 
 
+ROLE_ALIASES = {
+    "Offtank": ["offtank", "off tank", "off-tank"],
+    "Scout": ["scout"],
+    "Falce Daga": ["falce daga", "daga"],
+    "Falce": ["falce", "scythe"],
+    "Main Healer": ["main healer", "mh", "healer", "heal"],
+    "Shadowcaller supp": ["shadowcaller", "shadow caller", "sc"],
+    "Tanque": ["tank", "tanque"],
+}
+
+
 def normalize_role(text):
     text = text.lower().strip()
 
     if text.startswith("signoff"):
         return "Signoff"
 
-    if "offtank" in text or "off tank" in text or "off-tank" in text:
-        return "Offtank"
-
-    if "scout" in text:
-        return "Scout"
-
-    if "falce daga" in text or "daga" in text:
-        return "Falce Daga"
-
-    if "falce" in text or "scythe" in text:
-        return "Falce"
-
-    if (
-        "main healer" in text
-        or text == "mh"
-        or " x mh" in text
-        or "healer" in text
-        or "heal" in text
-    ):
-        return "Main Healer"
-
-    if (
-        "shadowcaller" in text
-        or "shadow caller" in text
-        or text == "sc"
-        or " x sc" in text
-    ):
-        return "Shadowcaller supp"
-
-    if "tank" in text or "tanque" in text:
-        return "Tanque"
-
     if "fill" in text:
         return "Fill"
+
+    for role, aliases in ROLE_ALIASES.items():
+        for alias in aliases:
+            if alias in text:
+                return role
 
     return None
 
 
-def add_user_to_activity(activity, user, role_requested):
-    if role_requested == "Fill":
+def parse_fill_avoid(text):
+    text = text.lower().strip()
+    avoid = []
+
+    if "menos" not in text:
+        return avoid
+
+    avoid_text = text.split("menos", 1)[1].strip()
+
+    for role, aliases in ROLE_ALIASES.items():
+        for alias in aliases:
+            if alias in avoid_text:
+                if role not in avoid:
+                    avoid.append(role)
+
+    return avoid
+
+
+def get_user_slot(activity, user_id):
+    for slot in activity["slots"]:
+        if slot["user"] and slot["user"].id == user_id:
+            return slot
+
+    return None
+
+
+def get_user_fill(activity, user_id):
+    for fill in activity["fill_queue"]:
+        if fill["user"].id == user_id:
+            return fill
+
+    return None
+
+
+def is_user_in_activity(activity, user_id):
+    return get_user_slot(activity, user_id) is not None or get_user_fill(activity, user_id) is not None
+
+
+def clear_fill_assignments(activity):
+    fill_ids = [fill["user"].id for fill in activity["fill_queue"]]
+
+    for slot in activity["slots"]:
+        if slot["user"] and slot["user"].id in fill_ids:
+            slot["user"] = None
+            slot["filled_by_fill"] = False
+
+
+def rebuild_fill_assignments(activity):
+    clear_fill_assignments(activity)
+
+    for fill in activity["fill_queue"]:
+        user = fill["user"]
+        avoid = fill["avoid"]
+
         for slot in activity["slots"]:
-            if slot["user"] is None and slot["role"] != "Tanque":
+            if slot["user"] is None and slot["role"] not in avoid and slot["role"] != "Tanque":
                 slot["user"] = user
-                return True
-        return False
+                slot["filled_by_fill"] = True
+                fill["assigned_role"] = slot["role"]
+                break
+        else:
+            fill["assigned_role"] = None
+
+
+def add_user_to_activity(activity, user, role_requested, message_content):
+    if is_user_in_activity(activity, user.id):
+        return False, "already_registered"
+
+    if role_requested == "Fill":
+        avoid = parse_fill_avoid(message_content)
+
+        activity["fill_queue"].append({
+            "user": user,
+            "avoid": avoid,
+            "assigned_role": None
+        })
+
+        rebuild_fill_assignments(activity)
+        return True, "fill_added"
 
     for slot in activity["slots"]:
         if slot["role"] == role_requested and slot["user"] is None:
             slot["user"] = user
-            return True
+            slot["filled_by_fill"] = False
+            rebuild_fill_assignments(activity)
+            return True, "role_added"
 
-    return False
+    return False, "role_full"
 
 
 def remove_user_from_activity(activity, user):
+    removed = False
+
     for slot in activity["slots"]:
         if slot["user"] and slot["user"].id == user.id:
             slot["user"] = None
-            return True
+            slot["filled_by_fill"] = False
+            removed = True
 
-    return False
+    for fill in list(activity["fill_queue"]):
+        if fill["user"].id == user.id:
+            activity["fill_queue"].remove(fill)
+            removed = True
+
+    if removed:
+        rebuild_fill_assignments(activity)
+
+    return removed
+
+
+def format_fill_queue(activity):
+    if not activity["fill_queue"]:
+        return []
+
+    lines = [
+        "",
+        "🟨 **Fill / Reserva**"
+    ]
+
+    for fill in activity["fill_queue"]:
+        user = fill["user"]
+        avoid = fill["avoid"]
+        assigned = fill.get("assigned_role")
+
+        text = f"- {user.mention}"
+
+        if avoid:
+            text += f" | menos: {', '.join(avoid)}"
+
+        if assigned:
+            text += f" | asignado: **{assigned}**"
+        else:
+            text += " | esperando hueco"
+
+        lines.append(text)
+
+    return lines
 
 
 def render_activity_message(activity):
@@ -111,9 +208,14 @@ def render_activity_message(activity):
 
     for slot in activity["slots"]:
         if slot["user"]:
-            lines.append(f"{slot['role']} : {slot['user'].mention}")
+            if slot.get("filled_by_fill"):
+                lines.append(f"{slot['role']} : {slot['user'].mention} *(fill)*")
+            else:
+                lines.append(f"{slot['role']} : {slot['user'].mention}")
         else:
             lines.append(f"{slot['role']} :")
+
+    lines += format_fill_queue(activity)
 
     lines += [
         "",
@@ -124,6 +226,7 @@ def render_activity_message(activity):
     ]
 
     return "\n".join(lines)
+
 
 class CalendarView(discord.ui.View):
     def __init__(self, ctx, avas):
@@ -191,6 +294,7 @@ class CalendarView(discord.ui.View):
 
         await self.update(interaction)
 
+
 class Activities(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -212,7 +316,7 @@ class Activities(commands.Cog):
 
         for (ava_message_id,) in finished_avas:
             participants = database.get_scheduled_ava_participants(ava_message_id)
-    
+
             if not participants:
                 database.mark_ava_fame_processed(ava_message_id)
                 continue
@@ -220,7 +324,7 @@ class Activities(commands.Cog):
             user_ids = [user_id for user_id, role in participants]
 
             guild = self.bot.guilds[0]
-            
+
             await fame_cog.process_ava_fame_end(
                 guild,
                 ava_message_id,
@@ -231,7 +335,6 @@ class Activities(commands.Cog):
 
     @commands.command(name="calendar")
     async def calendar(self, ctx):
-
         database.delete_finished_avas()
 
         avas = database.get_calendar_avas(50)
@@ -251,9 +354,17 @@ class Activities(commands.Cog):
 
         for role in ROLES_ORDER:
             if role == "Tanque":
-                slots.append({"role": role, "user": creator})
+                slots.append({
+                    "role": role,
+                    "user": creator,
+                    "filled_by_fill": False
+                })
             else:
-                slots.append({"role": role, "user": None})
+                slots.append({
+                    "role": role,
+                    "user": None,
+                    "filled_by_fill": False
+                })
 
         activity = {
             "creator": creator,
@@ -263,6 +374,7 @@ class Activities(commands.Cog):
             "hora_fin": hora_fin,
             "maseo": maseo,
             "slots": slots,
+            "fill_queue": []
         }
 
         msg = await ctx.send(render_activity_message(activity))
@@ -288,9 +400,9 @@ class Activities(commands.Cog):
             hora_fin,
             maseo
         )
- 
+
         database.add_scheduled_ava_participant(msg.id, creator.id, "Tanque")
-    
+
         activity_messages[thread.id] = {
             "message": msg,
             "activity": activity,
@@ -298,7 +410,13 @@ class Activities(commands.Cog):
         }
 
         await thread.send(
-            "Escribid aquí cosas como: `x falce`, `x healer`, `x mh`, `x scout`, `fill`\n"
+            "Escribid aquí cosas como:\n"
+            "`x falce`, `x healer`, `x mh`, `x scout`, `x offtank`\n\n"
+            "Para fill:\n"
+            "`x fill`\n"
+            "`x fill menos scout`\n"
+            "`x fill menos sc`\n"
+            "`x fill menos healer`\n\n"
             "Para borrarte de la lista escribe: `signoff`\n"
             "Para borrar a otra persona escribe: `signoff @usuario`"
         )
@@ -341,13 +459,19 @@ class Activities(commands.Cog):
                     data["message_id"],
                     target_user.id
                 )
+
                 await main_message.edit(content=render_activity_message(activity))
                 await message.add_reaction("✅")
             else:
                 await message.add_reaction("❌")
 
         elif role:
-            success = add_user_to_activity(activity, message.author, role)
+            success, reason = add_user_to_activity(
+                activity,
+                message.author,
+                role,
+                message.content
+            )
 
             if success:
                 database.add_scheduled_ava_participant(
@@ -355,9 +479,31 @@ class Activities(commands.Cog):
                     message.author.id,
                     role
                 )
+
                 await main_message.edit(content=render_activity_message(activity))
                 await message.add_reaction("✅")
+
             else:
+                if reason == "already_registered":
+                    existing_slot = get_user_slot(activity, message.author.id)
+                    existing_fill = get_user_fill(activity, message.author.id)
+
+                    if existing_slot:
+                        await message.channel.send(
+                            f"❌ {message.author.mention}, ya estás apuntado como **{existing_slot['role']}**. "
+                            f"Usa `signoff` antes de cambiar de rol."
+                        )
+                    elif existing_fill:
+                        await message.channel.send(
+                            f"❌ {message.author.mention}, ya estás apuntado como **Fill**. "
+                            f"Usa `signoff` antes de cambiar."
+                        )
+
+                elif reason == "role_full":
+                    await message.channel.send(
+                        f"❌ {message.author.mention}, ese rol ya está lleno."
+                    )
+
                 await message.add_reaction("❌")
 
     @tasks.loop(minutes=1)
