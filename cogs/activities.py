@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 import database
+import config
 from utils.logger import send_log
 from datetime import datetime, timedelta
 
@@ -300,10 +301,14 @@ class Activities(commands.Cog):
         self.bot = bot
         self.reminder_loop.start()
         self.fame_finish_loop.start()
+        self.auto_calendar_loop.start()
+        self.inactive_loop.start()
 
     def cog_unload(self):
         self.reminder_loop.cancel()
         self.fame_finish_loop.cancel()
+        self.auto_calendar_loop.cancel()
+        self.inactive_loop.cancel()
 
     @tasks.loop(minutes=1)
     async def fame_finish_loop(self):
@@ -505,6 +510,123 @@ class Activities(commands.Cog):
                     )
 
                 await message.add_reaction("❌")
+
+    def build_auto_calendar_embed(self, guild, avas):
+        embed = discord.Embed(
+            title="📅 Calendario de Avalonianas",
+            description="Actualizado automáticamente cada 10 minutos.",
+            color=discord.Color.blue()
+        )
+
+        if not avas:
+            embed.description = "📅 No hay Avalonianas programadas."
+            return embed
+
+        for tier, date, start_time, end_time, maseo, creator_id, thread_id in avas[:10]:
+            caller = guild.get_member(creator_id)
+            caller_name = caller.display_name if caller else "Desconocido"
+
+            embed.add_field(
+                name=f"⚔️ {tier} | {date}",
+                value=(
+                    f"🕒 **{start_time} - {end_time}**\n"
+                    f"👤 Caller: **{caller_name}**\n"
+                    f"📍 Maseo: **{maseo}**\n"
+                    f"🧵 <#{thread_id}>"
+                ),
+                inline=False
+            )
+
+        embed.set_footer(text="EcosBot · Calendario automático")
+        return embed
+
+
+    async def update_auto_calendar_message(self):
+        channel = self.bot.get_channel(config.CALENDAR_CHANNEL)
+
+        if not channel:
+            return
+
+        database.delete_finished_avas()
+        avas = database.get_calendar_avas(50)
+
+        guild = channel.guild
+        embed = self.build_auto_calendar_embed(guild, avas)
+
+        message_id = database.get_setting("calendar_message_id")
+
+        if message_id:
+            try:
+                msg = await channel.fetch_message(int(message_id))
+                await msg.edit(embed=embed)
+                return
+            except:
+                pass
+
+        msg = await channel.send(embed=embed)
+        database.set_setting("calendar_message_id", msg.id)
+
+
+    def build_inactive_embed(self, guild, inactive_users):
+        embed = discord.Embed(
+            title="⚠️ Usuarios inactivos 14 días",
+            description="Usuarios registrados que no aparecen en ninguna Avaloniana reciente.",
+            color=discord.Color.orange()
+        )
+
+        if not inactive_users:
+            embed.description = "✅ No hay usuarios inactivos ahora mismo."
+            return embed
+
+        lines = []
+
+        for discord_id, albion_name, last_ava in inactive_users[:30]:
+            member = guild.get_member(discord_id)
+            name = member.display_name if member else albion_name
+
+            if last_ava:
+                lines.append(f"• **{name}** — última ava: `{last_ava}`")
+            else:
+                lines.append(f"• **{name}** — nunca se ha apuntado")
+
+        embed.description = "\n".join(lines)
+        embed.set_footer(text="EcosBot · Control de actividad")
+        return embed
+
+
+    async def update_inactive_message(self):
+        channel = self.bot.get_channel(config.INACTIVE_CHANNEL)
+
+        if not channel:
+            return
+
+        inactive_users = database.get_inactive_registered_players(14)
+
+        guild = channel.guild
+        embed = self.build_inactive_embed(guild, inactive_users)
+
+        message_id = database.get_setting("inactive_message_id")
+
+        if message_id:
+            try:
+                msg = await channel.fetch_message(int(message_id))
+                await msg.edit(embed=embed)
+                return
+            except:
+                pass
+
+        msg = await channel.send(embed=embed)
+        database.set_setting("inactive_message_id", msg.id)
+
+
+    @tasks.loop(minutes=10)
+    async def auto_calendar_loop(self):
+        await self.update_auto_calendar_message()
+
+
+    @tasks.loop(hours=6)
+    async def inactive_loop(self):
+        await self.update_inactive_message()
 
     @tasks.loop(minutes=1)
     async def reminder_loop(self):

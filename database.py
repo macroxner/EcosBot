@@ -1001,3 +1001,66 @@ def get_user_sounds(user_id):
     result = [row[0] for row in cursor.fetchall()]
     conn.close()
     return result
+
+def get_setting(key):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+
+    cursor.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
+    row = cursor.fetchone()
+
+    conn.close()
+    return row[0] if row else None
+
+
+def set_setting(key, value):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+
+    cursor.execute("""
+    INSERT INTO bot_settings (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    """, (key, str(value)))
+
+    conn.commit()
+    conn.close()
+
+
+def get_inactive_registered_players(days=14):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT
+        rp.discord_id,
+        rp.albion_name,
+        MAX(sa.created_at) as last_ava
+    FROM registered_players rp
+    LEFT JOIN scheduled_ava_participants sap
+        ON rp.discord_id = sap.user_id
+    LEFT JOIN scheduled_avas sa
+        ON sap.ava_message_id = sa.message_id
+    GROUP BY rp.discord_id, rp.albion_name
+    HAVING last_ava IS NULL
+       OR datetime(last_ava) <= datetime('now', ?)
+    ORDER BY last_ava ASC
+    """, (f"-{days} days",))
+
+    result = cursor.fetchall()
+    conn.close()
+    return result

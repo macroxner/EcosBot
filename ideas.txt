@@ -1,0 +1,53 @@
+@Usuario no show
+@Usuario swap crítico
+@Usuario swap daño
+@Usuario swap lento
+@Usuario swap avisado
+@Usuario tier incorrecto
+@Usuario bolsa inferior
+@Usuario dinero tabs
+(solo funciona en canal de warnings)
+
+!warnings @Usuario
+!removewarning @Usuario
+
+!topbal
+!topecoins
+
+!loot
+
+!bal @usuario
+!addbal @usuario 100
+!removebal @usuario 100
+!addecoins @usuario 100
+!removeecoins @usuario 100
+!resetbalance @usuario
+
+!calendar
+
+!ava (tier ava) (fecha) (hora inicial) (hora final) (zona de salida), ejemplo:
+!ava 8.4 29/06/2026 12:00 14:00 martlock portal
+
+!shop
+(solo funciona en canal de shop)
+
+!dashboard
+
+!stats @usuario
+
+!profile @usuario
+
+!guild
+!register @usuario ign
+!guilds
+
+!achievements @usuario
+
+!avafame
+!avafametop
+!lastavafame
+!guildavafame
+
+!history @usuario
+
+cambiar calendario por un canal que este actualizandose constantemente
