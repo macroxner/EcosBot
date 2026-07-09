@@ -10,3 +10,4 @@ pyvenv.cfg
 Lib
 Scripts
 settings.json
+launch.json
