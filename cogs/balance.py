@@ -59,7 +59,7 @@ class Balance(commands.Cog):
     @removebal.error
     @addbal.error
     async def error_permisos(clase, contexto:commands.Context, error):
-        await contexto.send("No tienes permisos suficientes para hacer esto")
+        await contexto.send(error)
 
 
 async def setup(bot):
