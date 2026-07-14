@@ -365,7 +365,7 @@ def reset_balance(user_id):
     conn.commit()
     conn.close()
 
-    add_transaction(user_id, amount, "balance", reason)
+    add_transaction(user_id, 0, "balance", "")
 
 
 def add_ecoins(user_id, amount, reason="Movimiento manual"):
