@@ -51,6 +51,160 @@ def parse_player_data(data):
         "alliance_name": data.get("AllianceName") or "Sin alianza",
     }
 
+class RegisteredView(discord.ui.View):
+    def __init__(self, ctx, registered_members, unregistered_members):
+        super().__init__(timeout=180)
+        self.ctx = ctx
+        self.registered_members = registered_members
+        self.unregistered_members = unregistered_members
+        self.mode = "registered"
+        self.page = 0
+        self.page_size = 10
+
+    def current_items(self):
+        if self.mode == "registered":
+            return self.registered_members
+
+        return self.unregistered_members
+
+    def total_pages(self):
+        items = self.current_items()
+        return max(1, (len(items) + self.page_size - 1) // self.page_size)
+
+    def build_embed(self):
+        items = self.current_items()
+        total_pages = self.total_pages()
+
+        if self.page >= total_pages:
+            self.page = total_pages - 1
+
+        start = self.page * self.page_size
+        end = start + self.page_size
+
+        embed = discord.Embed(
+            title="📋 Registro de jugadores",
+            description=(
+                f"Registrados: **{len(self.registered_members)}**\n"
+                f"Por registrar: **{len(self.unregistered_members)}**\n\n"
+                f"Vista: **{'Registrados' if self.mode == 'registered' else 'Por registrar'}**\n"
+                f"Página **{self.page + 1}/{total_pages}**"
+            ),
+            color=(
+                discord.Color.green()
+                if self.mode == "registered"
+                else discord.Color.orange()
+            )
+        )
+
+        if not items:
+            embed.add_field(
+                name="Sin resultados",
+                value=(
+                    "No hay usuarios registrados."
+                    if self.mode == "registered"
+                    else "🎉 Todos los miembros están registrados."
+                ),
+                inline=False
+            )
+            return embed
+
+        lines = []
+
+        if self.mode == "registered":
+            for discord_name, albion_name, guild_name in items[start:end]:
+                lines.append(
+                    f"✅ **{discord_name}**\n"
+                    f"└ Albion: `{albion_name}` | Gremio: **{guild_name}**"
+                )
+        else:
+            for discord_name in items[start:end]:
+                lines.append(f"❌ **{discord_name}**")
+
+        embed.add_field(
+            name=(
+                f"✅ Registrados ({len(items)})"
+                if self.mode == "registered"
+                else f"❌ Por registrar ({len(items)})"
+            ),
+            value="\n".join(lines),
+            inline=False
+        )
+
+        return embed
+
+    async def check_user(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(
+                "❌ Este panel no es tuyo.",
+                ephemeral=True
+            )
+            return False
+
+        return True
+
+    @discord.ui.button(
+        label="✅ Registrados",
+        style=discord.ButtonStyle.success
+    )
+    async def show_registered(self, interaction, button):
+        if not await self.check_user(interaction):
+            return
+
+        self.mode = "registered"
+        self.page = 0
+
+        await interaction.response.edit_message(
+            embed=self.build_embed(),
+            view=self
+        )
+
+    @discord.ui.button(
+        label="❌ Por registrar",
+        style=discord.ButtonStyle.danger
+    )
+    async def show_unregistered(self, interaction, button):
+        if not await self.check_user(interaction):
+            return
+
+        self.mode = "unregistered"
+        self.page = 0
+
+        await interaction.response.edit_message(
+            embed=self.build_embed(),
+            view=self
+        )
+
+    @discord.ui.button(
+        label="⬅️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def previous_page(self, interaction, button):
+        if not await self.check_user(interaction):
+            return
+
+        if self.page > 0:
+            self.page -= 1
+
+        await interaction.response.edit_message(
+            embed=self.build_embed(),
+            view=self
+        )
+
+    @discord.ui.button(
+        label="➡️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next_page(self, interaction, button):
+        if not await self.check_user(interaction):
+            return
+
+        if self.page < self.total_pages() - 1:
+            self.page += 1
+
+        await interaction.response.edit_message(
+            embed=self.build_embed(),
+            view=self
+        )
 
 class Albion(commands.Cog):
     def __init__(self, bot):
@@ -158,6 +312,63 @@ class Albion(commands.Cog):
             lines.append("")
 
         await ctx.send("\n".join(lines[:80]))
+
+    @commands.command(name="registered")
+    async def registered(self, ctx):
+        registered_players = database.get_registered_players()
+
+        registered_by_discord_id = {
+            discord_id: {
+                "albion_name": albion_name,
+                "guild_name": guild_name or "Sin gremio"
+            }
+            for (
+                discord_id,
+                albion_id,
+                albion_name,
+                guild_id,
+                guild_name,
+                alliance_id,
+                alliance_name
+            ) in registered_players
+        }
+
+        guild_members = [
+            member
+            for member in ctx.guild.members
+            if not member.bot
+        ]
+
+        registered_members = []
+        unregistered_members = []
+
+        for member in guild_members:
+            player = registered_by_discord_id.get(member.id)
+
+            if player:
+                registered_members.append(
+                    (
+                        member.display_name,
+                        player["albion_name"],
+                        player["guild_name"]
+                    )
+                )
+            else:
+                unregistered_members.append(member.display_name)
+
+        registered_members.sort(key=lambda item: item[0].lower())
+        unregistered_members.sort(key=str.lower)
+
+        view = RegisteredView(
+            ctx,
+            registered_members,
+            unregistered_members
+        )
+
+        await ctx.send(
+            embed=view.build_embed(),
+            view=view
+        )
 
     @tasks.loop(minutes=10)
     async def guild_sync_loop(self):
