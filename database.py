@@ -1,7 +1,41 @@
+import os
 import sqlite3
+import shutil
 
-DB_NAME = "data.db"
+LOCAL_DB_PATH = "data.db"
+PERSISTENT_DB_PATH = os.getenv("DB_PATH", LOCAL_DB_PATH)
 
+DB_NAME = PERSISTENT_DB_PATH
+
+def migrate_existing_database():
+    """
+    Copia una base de datos local existente al volumen persistente.
+
+    Solo realiza la copia si:
+    - DB_PATH apunta a otra ubicación.
+    - Existe data.db en /workspace.
+    - Todavía no existe una base en el volumen.
+    """
+    if PERSISTENT_DB_PATH == LOCAL_DB_PATH:
+        return
+
+    persistent_directory = os.path.dirname(PERSISTENT_DB_PATH)
+
+    if persistent_directory:
+        os.makedirs(persistent_directory, exist_ok=True)
+
+    if os.path.exists(LOCAL_DB_PATH) and not os.path.exists(PERSISTENT_DB_PATH):
+        print(
+            f"Migrando base de datos: "
+            f"{LOCAL_DB_PATH} -> {PERSISTENT_DB_PATH}"
+        )
+
+        shutil.copy2(
+            LOCAL_DB_PATH,
+            PERSISTENT_DB_PATH
+        )
+
+        print("Base de datos migrada correctamente.")
 
 def connect():
     return sqlite3.connect(DB_NAME)

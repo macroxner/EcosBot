@@ -18,6 +18,10 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 
 @bot.event
 async def on_ready():
+    database.migrate_existing_database()
+    database.create_tables()
+
+    print(f"Base de datos activa: {database.DB_NAME}")
     print(f"Bot conectado como {bot.user}")
 
 @bot.event
