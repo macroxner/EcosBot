@@ -1,3 +1,5 @@
+import asyncio
+
 import discord
 from discord.ext import commands, tasks
 import database
@@ -5,6 +7,12 @@ import config
 from utils.logger import send_log
 from datetime import datetime, timedelta
 
+from utils.embeds import (
+    success_embed,
+    error_embed,
+    warning_embed,
+    info_embed,
+)
 
 activity_messages = {}
 
@@ -321,16 +329,211 @@ class CalendarView(discord.ui.View):
 class Activities(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.restore_lock = asyncio.Lock()
+        self.activities_restored = False
+
         self.reminder_loop.start()
         self.fame_finish_loop.start()
         self.auto_calendar_loop.start()
         self.inactive_loop.start()
+
+    async def cog_load(self):
+        """
+        Reconstruye en memoria las actividades abiertas guardadas en SQLite.
+
+        Esto hace que los hilos sigan aceptando inscripciones después de:
+        - un commit y redeploy;
+        - un reinicio de Northflank;
+        - una caída temporal del bot;
+        - una recarga del cog.
+        """
+        await self.bot.wait_until_ready()
+        await self.restore_active_activities()
 
     def cog_unload(self):
         self.reminder_loop.cancel()
         self.fame_finish_loop.cancel()
         self.auto_calendar_loop.cancel()
         self.inactive_loop.cancel()
+
+    async def get_member_safe(self, guild, user_id):
+        member = guild.get_member(int(user_id))
+
+        if member is not None:
+            return member
+
+        try:
+            return await guild.fetch_member(int(user_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return None
+
+    async def get_channel_safe(self, channel_id):
+        channel = self.bot.get_channel(int(channel_id))
+
+        if channel is not None:
+            return channel
+
+        try:
+            return await self.bot.fetch_channel(int(channel_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return None
+
+    async def build_restored_activity(self, row):
+        (
+            message_id,
+            thread_id,
+            channel_id,
+            creator_id,
+            tier,
+            fecha,
+            hora_inicio,
+            hora_fin,
+            maseo,
+        ) = row
+
+        thread = await self.get_channel_safe(thread_id)
+        channel = await self.get_channel_safe(channel_id)
+
+        if thread is None or channel is None:
+            return None
+
+        guild = thread.guild
+        creator = await self.get_member_safe(guild, creator_id)
+
+        if creator is None:
+            return None
+
+        try:
+            main_message = await channel.fetch_message(int(message_id))
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return None
+
+        slots = [
+            {
+                "role": role,
+                "user": None,
+                "filled_by_fill": False,
+            }
+            for role in ROLES_ORDER
+        ]
+
+        fill_queue = []
+
+        participants = database.get_scheduled_ava_participants_for_restore(
+            message_id
+        )
+
+        for participant in participants:
+            user_id, role, avoid_roles = participant
+            member = await self.get_member_safe(guild, user_id)
+
+            if member is None:
+                continue
+
+            if role == "Fill":
+                avoid = [
+                    item.strip()
+                    for item in (avoid_roles or "").split(",")
+                    if item.strip()
+                ]
+
+                fill_queue.append({
+                    "user": member,
+                    "avoid": avoid,
+                    "assigned_role": None,
+                })
+                continue
+
+            for slot in slots:
+                if slot["role"] == role and slot["user"] is None:
+                    slot["user"] = member
+                    slot["filled_by_fill"] = False
+                    break
+
+        # Compatibilidad con actividades antiguas en las que el tanque
+        # no estuviera guardado correctamente en participantes.
+        if not any(
+            slot["role"] == "Tanque" and slot["user"] is not None
+            for slot in slots
+        ):
+            for slot in slots:
+                if slot["role"] == "Tanque":
+                    slot["user"] = creator
+                    break
+
+        activity = {
+            "creator": creator,
+            "tier": tier,
+            "fecha": fecha,
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "maseo": maseo,
+            "slots": slots,
+            "fill_queue": fill_queue,
+        }
+
+        rebuild_fill_assignments(activity)
+
+        return {
+            "thread_id": int(thread_id),
+            "message": main_message,
+            "activity": activity,
+            "message_id": int(message_id),
+        }
+
+    async def restore_active_activities(self):
+        async with self.restore_lock:
+            rows = database.get_active_avas_for_restore()
+            restored = 0
+
+            for row in rows:
+                data = await self.build_restored_activity(row)
+
+                if data is None:
+                    continue
+
+                activity_messages[data["thread_id"]] = {
+                    "message": data["message"],
+                    "activity": data["activity"],
+                    "message_id": data["message_id"],
+                }
+
+                restored += 1
+
+            self.activities_restored = True
+            print(
+                f"Actividades restauradas tras iniciar el bot: {restored}"
+            )
+
+    async def restore_activity_by_thread(self, thread_id):
+        """
+        Segunda protección: si un hilo no está en RAM, intenta recuperarlo
+        directamente desde SQLite al recibir un mensaje.
+        """
+        async with self.restore_lock:
+            if int(thread_id) in activity_messages:
+                return True
+
+            row = database.get_scheduled_ava_by_thread(thread_id)
+
+            if row is None:
+                return False
+
+            data = await self.build_restored_activity(row)
+
+            if data is None:
+                return False
+
+            activity_messages[data["thread_id"]] = {
+                "message": data["message"],
+                "activity": data["activity"],
+                "message_id": data["message_id"],
+            }
+
+            print(
+                f"Actividad del hilo {thread_id} restaurada bajo demanda."
+            )
+            return True
 
     @tasks.loop(minutes=1)
     async def fame_finish_loop(self):
@@ -367,7 +570,12 @@ class Activities(commands.Cog):
         avas = database.get_calendar_avas(50)
 
         if not avas:
-            await ctx.send("📅 No hay Avalonianas programadas.")
+            await ctx.send(
+                embed=info_embed(
+                    "Calendario",
+                    "No hay Avalonianas programadas."
+                )
+            )
             return
 
         view = CalendarView(ctx, avas)
@@ -465,7 +673,12 @@ class Activities(commands.Cog):
             return
 
         if message.channel.id not in activity_messages:
-            return
+            restored = await self.restore_activity_by_thread(
+                message.channel.id
+            )
+
+            if not restored:
+                return
 
         data = activity_messages[message.channel.id]
         activity = data["activity"]
@@ -501,10 +714,18 @@ class Activities(commands.Cog):
             )
 
             if success:
+                avoid_roles = ""
+
+                if role == "Fill":
+                    avoid_roles = ",".join(
+                        parse_fill_avoid(message.content)
+                    )
+
                 database.add_scheduled_ava_participant(
                     data["message_id"],
                     message.author.id,
-                    role
+                    role,
+                    avoid_roles
                 )
 
                 await main_message.edit(content=render_activity_message(activity))
@@ -517,18 +738,25 @@ class Activities(commands.Cog):
 
                     if existing_slot:
                         await message.channel.send(
-                            f"❌ {message.author.mention}, ya estás apuntado como **{existing_slot['role']}**. "
-                            f"Usa `signoff` antes de cambiar de rol."
+                            embed=error_embed(
+                                f"{message.author.mention}, ya estás apuntado como **{existing_slot['role']}**. "
+                                f"Usa `signoff` antes de cambiar de rol."
+                            )
                         )
                     elif existing_fill:
                         await message.channel.send(
-                            f"❌ {message.author.mention}, ya estás apuntado como **Fill**. "
-                            f"Usa `signoff` antes de cambiar."
+                            embed=error_embed(
+                                f"{message.author.mention}, ya estás apuntado como **Fill**."
+                                f"Usa `signoff` antes de cambiar."
+                            )
                         )
 
                 elif reason == "role_full":
                     await message.channel.send(
-                        f"❌ {message.author.mention}, ese rol ya está lleno."
+                        embed=error_embed(
+                            f"{message.author.mention}, ese rol ya está lleno.",
+                            "Rol completo"
+                        )
                     )
 
                 await message.add_reaction("❌")
@@ -668,14 +896,18 @@ class Activities(commands.Cog):
                 thread = self.bot.get_channel(thread_id)
 
                 if thread:
-                    await thread.send(
-                        f"⏰ **Recordatorio de Avaloniana**\n\n"
-                        f"Empieza en **15 minutos**.\n"
-                        f"Tier: **{tier}**\n"
-                        f"Hora: **{start_time} - {end_time}**\n"
-                        f"Maseo: **{maseo}**\n"
-                        f"Caller: <@{creator_id}>"
+                    embed = warning_embed(
+                        "Avaloniana en 15 minutos",
+                        (
+                            f"⏰ **Recordatorio de Avaloniana**\n\n"
+                            f"Tier: **{tier}**\n"
+                            f"Hora: **{start_time} - {end_time}**\n"
+                            f"Maseo: **{maseo}**\n"
+                            f"Caller: <@{creator_id}>"
+                        )
                     )
+
+                    await thread.send(embed=embed)
 
                 database.mark_ava_reminder_sent(ava_id)
 

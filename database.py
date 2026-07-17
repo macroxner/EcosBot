@@ -46,8 +46,19 @@ def create_tables():
     cursor = conn.cursor()
 
     try:
-        cursor.execute("ALTER TABLE scheduled_avas ADD COLUMN fame_processed INTEGER DEFAULT 0")
-    except:
+        cursor.execute(
+            "ALTER TABLE scheduled_avas "
+            "ADD COLUMN fame_processed INTEGER DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute(
+            "ALTER TABLE scheduled_ava_participants "
+            "ADD COLUMN avoid_roles TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
         pass
 
     cursor.execute("""
@@ -98,6 +109,7 @@ def create_tables():
         ava_message_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
         role TEXT NOT NULL,
+        avoid_roles TEXT DEFAULT '',
         PRIMARY KEY (ava_message_id, user_id)
     )
     """)
@@ -799,15 +811,28 @@ def get_latest_scheduled_ava_message_id():
 
     return result[0] if result else None
 
-def add_scheduled_ava_participant(ava_message_id, user_id, role):
+def add_scheduled_ava_participant(
+    ava_message_id,
+    user_id,
+    role,
+    avoid_roles=""
+):
     conn = connect()
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT OR REPLACE INTO scheduled_ava_participants
-    (ava_message_id, user_id, role)
-    VALUES (?, ?, ?)
-    """, (ava_message_id, user_id, role))
+    INSERT INTO scheduled_ava_participants
+    (ava_message_id, user_id, role, avoid_roles)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(ava_message_id, user_id) DO UPDATE SET
+        role = excluded.role,
+        avoid_roles = excluded.avoid_roles
+    """, (
+        ava_message_id,
+        user_id,
+        role,
+        avoid_roles or ""
+    ))
 
     conn.commit()
     conn.close()
@@ -837,6 +862,91 @@ def get_scheduled_ava_participants(ava_message_id):
     """, (ava_message_id,))
 
     result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_scheduled_ava_participants_for_restore(ava_message_id):
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT user_id, role, COALESCE(avoid_roles, '')
+    FROM scheduled_ava_participants
+    WHERE ava_message_id = ?
+    ORDER BY rowid ASC
+    """, (ava_message_id,))
+
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_active_avas_for_restore():
+    """
+    Devuelve todas las avas cuyo final todavía no ha pasado.
+    Incluye los IDs necesarios para recuperar el mensaje y el hilo.
+    """
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT
+        message_id,
+        thread_id,
+        channel_id,
+        creator_id,
+        tier,
+        date,
+        start_time,
+        end_time,
+        maseo
+    FROM scheduled_avas
+    WHERE datetime(
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2) || ' ' ||
+        end_time
+    ) > datetime('now', 'localtime')
+    ORDER BY
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2),
+        start_time ASC
+    """)
+
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_scheduled_ava_by_thread(thread_id):
+    """
+    Recupera una ava concreta por el ID de su hilo.
+
+    Se usa como recuperación bajo demanda cuando el hilo no está
+    presente en activity_messages.
+    """
+    conn = connect()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT
+        message_id,
+        thread_id,
+        channel_id,
+        creator_id,
+        tier,
+        date,
+        start_time,
+        end_time,
+        maseo
+    FROM scheduled_avas
+    WHERE thread_id = ?
+    LIMIT 1
+    """, (thread_id,))
+
+    result = cursor.fetchone()
     conn.close()
     return result
 
