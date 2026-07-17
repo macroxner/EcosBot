@@ -250,7 +250,7 @@ def render_activity_message(activity):
 
     lines += [
         "",
-        "@Ava🔱 @AvaSoldier🔱",
+        "<@&1332749148000227369> <@&1338207294579539991>",
         f"/join {creator.display_name}",
         "",
         "OBLIGATORIO #forcecityoverload true"
