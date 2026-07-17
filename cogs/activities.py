@@ -331,6 +331,7 @@ class Activities(commands.Cog):
         self.bot = bot
         self.restore_lock = asyncio.Lock()
         self.activities_restored = False
+        self.restore_task = None
 
         self.reminder_loop.start()
         self.fame_finish_loop.start()
@@ -338,23 +339,29 @@ class Activities(commands.Cog):
         self.inactive_loop.start()
 
     async def cog_load(self):
-        """
-        Reconstruye en memoria las actividades abiertas guardadas en SQLite.
+        self.restore_task = asyncio.create_task(
+            self.restore_activities_after_ready()
+        )
 
-        Esto hace que los hilos sigan aceptando inscripciones después de:
-        - un commit y redeploy;
-        - un reinicio de Northflank;
-        - una caída temporal del bot;
-        - una recarga del cog.
-        """
+    async def restore_activities_after_ready(self):
         await self.bot.wait_until_ready()
-        await self.restore_active_activities()
+
+        try:
+            await self.restore_active_activities()
+        except Exception as error:
+            print(
+                "Error restaurando actividades: "
+                f"{type(error).__name__}: {error}"
+            )
 
     def cog_unload(self):
         self.reminder_loop.cancel()
         self.fame_finish_loop.cancel()
         self.auto_calendar_loop.cancel()
         self.inactive_loop.cancel()
+
+        if self.restore_task:
+            self.restore_task.cancel()
 
     async def get_member_safe(self, guild, user_id):
         member = guild.get_member(int(user_id))
