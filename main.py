@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 import database
 
+GUILD_ID = 1332738792746123426
+
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -49,11 +51,14 @@ async def setup_hook():
     await bot.load_extension("cogs.audio")
 
     # Sincroniza /addbal, /removebal y cualquier otro slash command.
-    synced = await bot.tree.sync()
+    guild = discord.Object(id=GUILD_ID)
+
+    bot.tree.copy_global_to(guild=guild)
+
+    synced = await bot.tree.sync(guild=guild)
 
     print(
-        f"Slash commands sincronizados: {len(synced)}"
+        f"Slash commands sincronizados en servidor: {len(synced)}"
     )
-
 
 bot.run(TOKEN)
