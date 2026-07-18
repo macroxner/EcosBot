@@ -14,7 +14,11 @@ intents.message_content = True
 
 database.create_tables()
 
-bot = commands.Bot(command_prefix="?", intents=intents)
+bot = commands.Bot(
+    command_prefix="?",
+    intents=intents
+)
+
 
 @bot.event
 async def on_ready():
@@ -23,6 +27,7 @@ async def on_ready():
 
     print(f"Base de datos activa: {database.DB_NAME}")
     print(f"Bot conectado como {bot.user}")
+
 
 @bot.event
 async def setup_hook():
@@ -42,5 +47,13 @@ async def setup_hook():
     await bot.load_extension("cogs.fame")
     await bot.load_extension("cogs.ava_fame_stats")
     await bot.load_extension("cogs.audio")
+
+    # Sincroniza /addbal, /removebal y cualquier otro slash command.
+    synced = await bot.tree.sync()
+
+    print(
+        f"Slash commands sincronizados: {len(synced)}"
+    )
+
 
 bot.run(TOKEN)

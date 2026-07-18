@@ -1,5 +1,7 @@
 import discord
 from discord.ext import commands
+
+from utils.embeds import economy_embed, error_embed
 import database
 
 
@@ -12,69 +14,142 @@ def get_member_name(ctx, user_id):
 
 
 def get_medal(index):
-    return {1: "🥇", 2: "🥈", 3: "🥉", 10: "🔟"}.get(index, f"{index}.")
+    return {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉"
+    }.get(index, f"`#{index}`")
 
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, ctx, users, title, value_index):
         super().__init__(timeout=120)
+
         self.ctx = ctx
         self.users = users
         self.title = title
         self.value_index = value_index
         self.page = 0
 
-    def build_text(self):
-        total_pages = max(1, (len(self.users) + PAGE_SIZE - 1) // PAGE_SIZE)
+    def build_embed(self):
+        total_pages = max(
+            1,
+            (len(self.users) + PAGE_SIZE - 1) // PAGE_SIZE
+        )
+
         start = self.page * PAGE_SIZE
         end = start + PAGE_SIZE
+
         page_users = self.users[start:end]
 
-        lines = [
-            self.title,
-            f"Página **{self.page + 1}/{total_pages}**",
-            ""
-        ]
+        lines = []
 
-        for i, user_data in enumerate(page_users, start=start + 1):
+        for i, user_data in enumerate(
+            page_users,
+            start=start + 1
+        ):
             user_id = user_data[0]
-            value = user_data[self.value_index]
-            name = get_member_name(self.ctx, user_id)
+            value = user_data[self.value_index] or 0
+
+            name = get_member_name(
+                self.ctx,
+                user_id
+            )
+
             medal = get_medal(i)
 
-            lines.append(f"{medal} **{name}** — {value:,}")
+            if self.value_index == 1:
+                icon = "💰"
+                unit = "plata"
+            else:
+                icon = "🪙"
+                unit = "Ecoins"
 
-        return "\n".join(lines)
+            lines.append(
+                f"{medal} **{name}**\n"
+                f"└ {icon} `{value:,}` {unit}"
+            )
 
-    async def update_message(self, interaction):
+        if not lines:
+            description = "No hay datos para mostrar."
+        else:
+            description = "\n\n".join(lines)
+
+        embed = economy_embed(
+            self.title,
+            description
+        )
+
+        embed.set_footer(
+            text=(
+                f"EcosBot · Página "
+                f"{self.page + 1}/{total_pages}"
+            )
+        )
+
+        return embed
+
+    async def update_message(
+        self,
+        interaction: discord.Interaction
+    ):
         await interaction.response.edit_message(
-            content=self.build_text(),
+            content=None,
+            embed=self.build_embed(),
             view=self
         )
 
-    @discord.ui.button(label="⬅️ Anterior", style=discord.ButtonStyle.secondary)
-    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="⬅️ Anterior",
+        style=discord.ButtonStyle.secondary
+    )
+    async def previous(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
         if interaction.user != self.ctx.author:
-            await interaction.response.send_message("❌ Este ranking no es tuyo.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Este ranking no es tuyo.",
+                ephemeral=True
+            )
             return
 
         if self.page > 0:
             self.page -= 1
 
-        await self.update_message(interaction)
+        await self.update_message(
+            interaction
+        )
 
-    @discord.ui.button(label="➡️ Siguiente", style=discord.ButtonStyle.secondary)
-    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="➡️ Siguiente",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
         if interaction.user != self.ctx.author:
-            await interaction.response.send_message("❌ Este ranking no es tuyo.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Este ranking no es tuyo.",
+                ephemeral=True
+            )
             return
 
-        total_pages = max(1, (len(self.users) + PAGE_SIZE - 1) // PAGE_SIZE)
+        total_pages = max(
+            1,
+            (len(self.users) + PAGE_SIZE - 1)
+            // PAGE_SIZE
+        )
 
         if self.page < total_pages - 1:
             self.page += 1
 
-        await self.update_message(interaction)
+        await self.update_message(
+            interaction
+        )
 
 
 class Leaderboard(commands.Cog):
@@ -84,39 +159,65 @@ class Leaderboard(commands.Cog):
     @commands.command(name="topbal")
     async def topbal(self, ctx):
         users = database.get_all_users()
-        users = sorted(users, key=lambda x: x[1], reverse=True)
+
+        users = sorted(
+            users,
+            key=lambda x: x[1],
+            reverse=True
+        )
 
         if not users:
-            await ctx.send("No hay usuarios registrados.")
+            await ctx.send(
+                embed=error_embed(
+                    "No hay usuarios registrados."
+                )
+            )
             return
 
         view = LeaderboardView(
             ctx,
             users,
-            "🏆 **BALANCE RANKING**",
+            "Ranking de Balance",
             1
         )
 
-        await ctx.send(view.build_text(), view=view)
+        await ctx.send(
+            embed=view.build_embed(),
+            view=view
+        )
 
     @commands.command(name="topecoins")
     async def topecoins(self, ctx):
         users = database.get_all_users()
-        users = sorted(users, key=lambda x: x[2], reverse=True)
+
+        users = sorted(
+            users,
+            key=lambda x: x[2],
+            reverse=True
+        )
 
         if not users:
-            await ctx.send("No hay usuarios registrados.")
+            await ctx.send(
+                embed=error_embed(
+                    "No hay usuarios registrados."
+                )
+            )
             return
 
         view = LeaderboardView(
             ctx,
             users,
-            "🪙 **ECOINS RANKING**",
+            "Ranking de Ecoins",
             2
         )
 
-        await ctx.send(view.build_text(), view=view)
+        await ctx.send(
+            embed=view.build_embed(),
+            view=view
+        )
 
 
 async def setup(bot):
-    await bot.add_cog(Leaderboard(bot))
+    await bot.add_cog(
+        Leaderboard(bot)
+    )
