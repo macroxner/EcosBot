@@ -6,6 +6,7 @@ import database
 import config
 from utils.logger import send_log
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from utils.embeds import (
     success_embed,
@@ -885,38 +886,84 @@ class Activities(commands.Cog):
     async def inactive_loop(self):
         await self.update_inactive_message()
 
-    @tasks.loop(minutes=1)
-    async def reminder_loop(self):
-        now = datetime.now()
+@tasks.loop(minutes=1)
+async def reminder_loop(self):
+    madrid_tz = ZoneInfo("Europe/Madrid")
+    now = datetime.now(madrid_tz)
 
-        avas = database.get_pending_ava_reminders()
+    avas = database.get_pending_ava_reminders()
 
-        for ava_id, thread_id, creator_id, tier, date, start_time, end_time, maseo in avas:
-            try:
-                ava_datetime = datetime.strptime(f"{date} {start_time}", "%d/%m/%Y %H:%M")
-            except ValueError:
-                continue
+    for (
+        ava_id,
+        thread_id,
+        creator_id,
+        tier,
+        date,
+        start_time,
+        end_time,
+        maseo
+    ) in avas:
 
-            reminder_time = ava_datetime - timedelta(minutes=15)
+        try:
+            ava_datetime = datetime.strptime(
+                f"{date} {start_time}",
+                "%d/%m/%Y %H:%M"
+            )
 
-            if now >= reminder_time:
-                thread = self.bot.get_channel(thread_id)
+            # La hora introducida en !ava siempre se interpreta
+            # como hora española.
+            ava_datetime = ava_datetime.replace(
+                tzinfo=madrid_tz
+            )
 
-                if thread:
-                    embed = warning_embed(
-                        "Avaloniana en 15 minutos",
-                        (
-                            f"⏰ **Recordatorio de Avaloniana**\n\n"
-                            f"Tier: **{tier}**\n"
-                            f"Hora: **{start_time} - {end_time}**\n"
-                            f"Maseo: **{maseo}**\n"
-                            f"Caller: <@{creator_id}>"
-                        )
+        except ValueError:
+            print(
+                f"Fecha/hora inválida en AVA {ava_id}: "
+                f"{date} {start_time}"
+            )
+            continue
+
+        reminder_time = ava_datetime - timedelta(
+            minutes=15
+        )
+
+        # Solo manda el recordatorio si estamos entre
+        # 15 minutos antes y la hora de inicio.
+        #
+        # Esto evita que una ava antigua mande el aviso tarde
+        # después de un reinicio del bot.
+        if reminder_time <= now < ava_datetime:
+            thread = self.bot.get_channel(thread_id)
+
+            if thread is None:
+                try:
+                    thread = await self.bot.fetch_channel(
+                        thread_id
                     )
+                except (
+                    discord.NotFound,
+                    discord.Forbidden,
+                    discord.HTTPException
+                ):
+                    thread = None
 
-                    await thread.send(embed=embed)
+            if thread:
+                embed = warning_embed(
+                    "Avaloniana en 15 minutos",
+                    (
+                        "⏰ **Recordatorio de Avaloniana**\n\n"
+                        f"Tier: **{tier}**\n"
+                        f"Hora: **{start_time} - {end_time}**\n"
+                        f"Maseo: **{maseo}**\n"
+                        f"Caller: <@{creator_id}>"
+                    )
+                )
 
-                database.mark_ava_reminder_sent(ava_id)
+                await thread.send(embed=embed)
+
+            database.mark_ava_reminder_sent(
+                ava_id
+            )
 
 
 async def setup(bot):
