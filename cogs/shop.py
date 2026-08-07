@@ -14,49 +14,56 @@ SHOP_ITEMS = {
         "cost": 50,
         "description": "Mutea a alguien durante 1 minuto.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        
     },
     "skill": {
         "name": "💀 Skill Issue 20 min",
         "cost": 75,
         "description": "Da el rol Skill Issue durante 20 minutos.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        "id_rol": 1535231201193893998
+        # PRUEBAS "id_rol":1535233450632814663
     },
     "npc": {
         "name": "🤖 NPC Energy 20 min",
         "cost": 40,
         "description": "Da el rol NPC Energy durante 20 minutos.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        "id_rol": 1529106389312602183
     },
     "braincell": {
         "name": "🧠 Last Braincell 20 min",
         "cost": 45,
         "description": "Da el rol Last Braincell durante 20 minutos.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        "id_rol": 1528791663030440058
     },
     "salty": {
         "name": "🧂 Salty 20 min",
         "cost": 35,
         "description": "Da el rol Salty durante 20 minutos.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        "id_rol": 1535230451071852656
     },
     "maincharacter": {
         "name": "👑 Main Character 20 min",
         "cost": 60,
         "description": "Da el rol Main Character durante 20 minutos.",
         "needs_target": True,
-        "type": "target"
+        "type": "target",
+        "id_rol": 1535230938185994250
     },
     "nickname": {
         "name": "📝 Cambiar nick 20 min",
         "cost": 80,
         "description": "Cambia el nick de alguien durante 20 minutos.",
         "needs_target": True,
-        "type": "nickname"
+        "type": "nickname",
     },
 }
 
@@ -66,11 +73,11 @@ def get_user_ecoins(user_id):
     return ecoins
 
 
-async def give_temp_role(guild, member, role_name, minutes=20):
-    role = discord.utils.get(guild.roles, name=role_name)
+async def give_temp_role(guild, member, role_id, minutes=20):
+    role = discord.utils.get(guild.roles, id=role_id)
 
-    if role is None:
-        role = await guild.create_role(name=role_name)
+    #if role is None:
+    #    role = await guild.create_role(name=role_name)
 
     await member.add_roles(role)
 
@@ -191,8 +198,7 @@ class TargetSelect(discord.ui.UserSelect):
             return
 
         database.add_ecoins(self.buyer.id, -cost, f"Compra tienda: {item['name']}")
-        database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
-
+        
         msg = await apply_shop_effect(
             interaction,
             self.bot,
@@ -201,17 +207,24 @@ class TargetSelect(discord.ui.UserSelect):
             self.item_key
         )
 
-        await interaction.response.send_message(msg)
+        if(msg[1]):
+            database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
+            await interaction.response.send_message(msg[0])
+        else:
+            # Comando erroneo por algun motivo
+            await interaction.response.send_message(msg[0])
+            database.add_ecoins(self.buyer.id, cost, f"Compra reembolsada tienda por {msg[0]}: {item['name']}")
 
-        await send_log(
-            self.bot,
-            "🛒 Compra de tienda",
-            f"Comprador: {self.buyer.mention}\n"
-            f"Objetivo: {member.mention}\n"
-            f"Producto: {item['name']}\n"
-            f"Coste: {cost} Ecoins",
-            discord.Color.purple()
-        )
+        if(msg[1]):
+            await send_log(
+                        self.bot,
+                        "🛒 Compra de tienda",
+                        f"Comprador: {self.buyer.mention}\n"
+                        f"Objetivo: {member.mention}\n"
+                        f"Producto: {item['name']}\n"
+                        f"Coste: {cost} Ecoins",
+                        discord.Color.purple()
+                    )
 
 
 class TargetView(discord.ui.View):
@@ -270,7 +283,12 @@ class ShopSelect(discord.ui.Select):
                 ephemeral=True
             )
 
-
+async def mute_member_async(member):
+    await member.edit(mute = True)
+            
+    await asyncio.sleep(60);
+    
+    await member.edit(mute = False)
 class ShopView(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=180)
@@ -281,32 +299,33 @@ async def apply_shop_effect(interaction, bot, buyer, member, item_key):
     guild = interaction.guild
 
     if item_key == "mute":
-        await member.timeout(
-            discord.utils.utcnow() + timedelta(minutes=1),
-            reason=f"Mute comprado por {buyer}"
-        )
-
-        return f"🔇 {buyer.mention} ha comprado un **mute de 1 minuto** para {member.mention}."
+        member_data = await member.fetch_voice()
+        if(member_data.mute):
+            return [f"{member.mention} ya está silenciado, compra reembolsada.", False]
+        
+        asyncio.create_task(mute_member_async(member=member))
+        return [f"🔇 {buyer.mention} ha comprado un **mute de 1 minuto** para {member.mention}.", True]
+    
 
     if item_key == "skill":
-        asyncio.create_task(give_temp_role(guild, member, "Skill Issue", 20))
-        return f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["skill"]["id_rol"], 20))
+        return [f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **20 minutos**.", True]
 
     if item_key == "npc":
-        asyncio.create_task(give_temp_role(guild, member, "NPC Energy", 20))
-        return f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["npc"]["id_rol"], 20))
+        return [f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **20 minutos**.", True]
 
     if item_key == "braincell":
-        asyncio.create_task(give_temp_role(guild, member, "Last Braincell", 20))
-        return f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["braincell"]["id_rol"], 20))
+        return [f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **20 minutos**.", True]
 
     if item_key == "salty":
-        asyncio.create_task(give_temp_role(guild, member, "Salty", 20))
-        return f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["salty"]["id_rol"], 20))
+        return [f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **20 minutos**.", True]
 
     if item_key == "maincharacter":
-        asyncio.create_task(give_temp_role(guild, member, "Main Character", 20))
-        return f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["maincharacter"]["id_rol"], 20))
+        return [f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **20 minutos**.", True]
 
     return "Compra realizada."
 
