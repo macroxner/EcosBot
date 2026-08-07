@@ -40,7 +40,10 @@ def normalize_role(text):
     if text.startswith("signoff"):
         return "Signoff"
 
-    if "fill" in text:
+    if not text.startswith("x"):
+        return None
+    
+    if ("fill" in text):
         return "Fill"
 
     for role, aliases in ROLE_ALIASES.items():
