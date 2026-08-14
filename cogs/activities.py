@@ -592,6 +592,7 @@ class Activities(commands.Cog):
         database.set_setting("calendar_message_id", msg.id)
 
 
+    
     def build_inactive_embed(self, guild, inactive_users):
         embed = discord.Embed(
             title="⚠️ Usuarios inactivos 14 días",
@@ -620,7 +621,7 @@ class Activities(commands.Cog):
 
 
     async def update_inactive_message(self):
-        channel = self.bot.get_channel(config.INACTIVE_CHANNEL)
+        channel = (self.bot.get_channel(config.INACTIVE_CHANNEL) or await self.bot.fetch_channel(config.INACTIVE_CHANNEL))
 
         if not channel:
             return
