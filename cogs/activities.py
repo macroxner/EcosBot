@@ -717,9 +717,21 @@ class Activities(commands.Cog):
                 await message.add_reaction("❌")
 
         elif role:
+            # Por defecto, se apunta la persona que escribe el mensaje.
+            target_user = message.author
+
+            # Si menciona a alguien, apuntamos a esa persona.
+            # Ejemplos:
+            # x falce @usuario
+            # x healer @usuario
+            # x fill @usuario
+            # x fill menos scout @usuario
+            if message.mentions:
+                target_user = message.mentions[0]
+
             success, reason = add_user_to_activity(
                 activity,
-                message.author,
+                target_user,
                 role,
                 message.content
             )
@@ -731,41 +743,55 @@ class Activities(commands.Cog):
                     avoid_roles = ",".join(
                         parse_fill_avoid(message.content)
                     )
-
+        
                 database.add_scheduled_ava_participant(
                     data["message_id"],
-                    message.author.id,
+                    target_user.id,
                     role,
                     avoid_roles
                 )
+        
+                await main_message.edit(
+                    content=render_activity_message(activity)
+                )
 
-                await main_message.edit(content=render_activity_message(activity))
                 await message.add_reaction("✅")
 
             else:
                 if reason == "already_registered":
-                    existing_slot = get_user_slot(activity, message.author.id)
-                    existing_fill = get_user_fill(activity, message.author.id)
+                    existing_slot = get_user_slot(
+                        activity,
+                        target_user.id
+                    )
+
+                    existing_fill = get_user_fill(
+                        activity,
+                        target_user.id
+                    )
 
                     if existing_slot:
                         await message.channel.send(
                             embed=error_embed(
-                                f"{message.author.mention}, ya estás apuntado como **{existing_slot['role']}**. "
-                                f"Usa `signoff` antes de cambiar de rol."
+                                f"{target_user.mention} ya está apuntado como "
+                                f"**{existing_slot['role']}**.\n"
+                                f"Usa `signoff {target_user.mention}` antes de cambiarle de rol.",
+                                "Usuario ya apuntado"
                             )
                         )
+
                     elif existing_fill:
                         await message.channel.send(
                             embed=error_embed(
-                                f"{message.author.mention}, ya estás apuntado como **Fill**."
-                                f"Usa `signoff` antes de cambiar."
+                                f"{target_user.mention} ya está apuntado como **Fill**.\n"
+                                f"Usa `signoff {target_user.mention}` antes de cambiarle.",
+                                "Usuario ya apuntado"
                             )
                         )
 
                 elif reason == "role_full":
                     await message.channel.send(
                         embed=error_embed(
-                            f"{message.author.mention}, ese rol ya está lleno.",
+                            f"{target_user.mention}, el rol **{role}** ya está lleno.",
                             "Rol completo"
                         )
                     )
