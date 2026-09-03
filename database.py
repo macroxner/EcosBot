@@ -1488,3 +1488,85 @@ def get_dragon_dashboard_stats():
         "dragon_participations": participations,
     }
 
+
+
+def get_manual_attendance_total(activity_type, user_id):
+    """Devuelve el total real de asistencias del usuario para Avas o Dragones."""
+    conn = connect()
+    cursor = conn.cursor()
+    if activity_type == "ava":
+        cursor.execute("SELECT COUNT(*) FROM ava_participations WHERE user_id = ?", (user_id,))
+    elif activity_type == "dragon":
+        cursor.execute("SELECT COUNT(*) FROM dragon_participations WHERE user_id = ?", (user_id,))
+    else:
+        conn.close()
+        raise ValueError("Tipo de actividad no válido")
+    total = cursor.fetchone()[0]
+    conn.close()
+    return total
+
+
+def adjust_attendance(activity_type, user_id, amount):
+    """Añade o elimina asistencias reales para que estadísticas, tops e inactividad se actualicen."""
+    from datetime import datetime
+
+    amount = int(amount)
+    if amount == 0:
+        return 0
+
+    conn = connect()
+    cursor = conn.cursor()
+    changed = 0
+
+    if activity_type == "ava":
+        if amount > 0:
+            for i in range(amount):
+                # IDs negativos únicos para distinguir correcciones manuales de mensajes Discord reales.
+                synthetic_id = -int(datetime.now().timestamp() * 1000000) - i
+                cursor.execute("""
+                    INSERT INTO ava_participations
+                    (message_id, user_id, role, ecoins_given)
+                    VALUES (?, ?, 'Manual', 0)
+                """, (synthetic_id, user_id))
+                changed += 1
+        else:
+            cursor.execute("""
+                SELECT id FROM ava_participations
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """, (user_id, abs(amount)))
+            ids = [row[0] for row in cursor.fetchall()]
+            for row_id in ids:
+                cursor.execute("DELETE FROM ava_participations WHERE id = ?", (row_id,))
+                changed -= 1
+
+    elif activity_type == "dragon":
+        if amount > 0:
+            today = datetime.now().strftime('%d/%m/%Y')
+            for i in range(amount):
+                synthetic_id = -int(datetime.now().timestamp() * 1000000) - i
+                cursor.execute("""
+                    INSERT INTO dragon_participations
+                    (dragon_message_id, user_id, role, event_date)
+                    VALUES (?, ?, 'Manual', ?)
+                """, (synthetic_id, user_id, today))
+                changed += 1
+        else:
+            cursor.execute("""
+                SELECT id FROM dragon_participations
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """, (user_id, abs(amount)))
+            ids = [row[0] for row in cursor.fetchall()]
+            for row_id in ids:
+                cursor.execute("DELETE FROM dragon_participations WHERE id = ?", (row_id,))
+                changed -= 1
+    else:
+        conn.close()
+        raise ValueError("Tipo de actividad no válido")
+
+    conn.commit()
+    conn.close()
+    return changed
