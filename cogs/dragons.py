@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from pathlib import Path
 
 import discord
 from discord.ext import commands, tasks
@@ -20,22 +21,30 @@ DRAGON_SLOTS = [
     {"label": "Mangual 2", "group": "Mangual"},
     {"label": "Incubo 1", "group": "Incubo"},
     {"label": "Incubo 2", "group": "Incubo"},
-    {"label": "Juradores", "group": "Juradores"},
+    # Los dos Juradores van juntos en la composición.
+    {"label": "Juradores 1", "group": "Juradores"},
+    {"label": "Juradores 2", "group": "Juradores"},
     {"label": "Monarca", "group": "Monarca"},
     {"label": "Romperreinos", "group": "Romperreinos"},
     {"label": "Main Healer", "group": "Main Healer"},
     {"label": "Healer sec", "group": "Healer sec"},
     {"label": "Raiz Dps 1", "group": "Raiz Dps"},
     {"label": "Raiz Dps 2", "group": "Raiz Dps"},
-    {"label": "Juradores 2", "group": "Juradores"},
     {"label": "Shadowcaller", "group": "Shadowcaller"},
-    {"label": "Dps 1", "group": "Lightcaller"},
-    {"label": "Dps 2", "group": "Fuego"},
+    # DPS: primero las 5 ballestas, penúltimo Lightcaller y último Flamígero.
+    {"label": "Dps 1", "group": "Ranged DPS"},
+    {"label": "Dps 2", "group": "Ranged DPS"},
     {"label": "Dps 3", "group": "Ranged DPS"},
     {"label": "Dps 4", "group": "Ranged DPS"},
     {"label": "Dps 5", "group": "Ranged DPS"},
-    {"label": "Dps 6", "group": "Ranged DPS"},
-    {"label": "Dps 7", "group": "Ranged DPS"},
+    {"label": "Dps 6 · Lightcaller", "group": "Lightcaller"},
+    {"label": "Dps 7 · Flamígero", "group": "Fuego"},
+]
+
+DRAGON_PING_IDS = [
+    1338207294579539991,
+    1332749148000227369,
+    1540712364452610178,
 ]
 
 # El orden importa: primero los alias más específicos.
@@ -62,6 +71,27 @@ DPS_GROUPS = {"Lightcaller", "Fuego", "Ranged DPS"}
 
 def clean_message_text(text: str) -> str:
     return " ".join(text.lower().strip().split())
+
+
+def build_dragon_ping_text(guild):
+    """Devuelve menciones válidas tanto si los IDs son roles como usuarios."""
+    mentions = []
+
+    for target_id in DRAGON_PING_IDS:
+        role = guild.get_role(target_id)
+        if role is not None:
+            mentions.append(role.mention)
+            continue
+
+        member = guild.get_member(target_id)
+        if member is not None:
+            mentions.append(member.mention)
+            continue
+
+        # Si no está en caché, lo dejamos como mención de usuario.
+        mentions.append(f"<@{target_id}>")
+
+    return " ".join(mentions)
 
 
 def normalize_role(text):
@@ -395,8 +425,12 @@ class Dragons(commands.Cog):
                 })
                 continue
 
+            # Compatibilidad con Dragones guardados antes de renombrar
+            # "Juradores" a "Juradores 1".
+            restored_role = "Juradores 1" if role == "Juradores" else role
+
             for slot in activity["slots"]:
-                if slot["label"] == role and slot["user"] is None:
+                if slot["label"] == restored_role and slot["user"] is None:
                     slot["user"] = member
                     break
 
@@ -500,6 +534,33 @@ class Dragons(commands.Cog):
             "activity": activity,
             "message_id": msg.id,
         }
+
+        # Aviso exclusivo de Dragones: menciones + imagen de composición dentro del hilo.
+        ping_text = build_dragon_ping_text(ctx.guild)
+        image_path = Path(__file__).resolve().parent.parent / "assets" / "dragon_compo.png"
+
+        if image_path.exists():
+            compo_embed = info_embed(
+                "Composición y builds de Dragones",
+                "Aquí tenéis la tabla de builds, swaps y composición para esta salida.",
+            )
+            compo_embed.set_image(url="attachment://dragon_compo.png")
+
+            await thread.send(
+                content=ping_text,
+                embed=compo_embed,
+                file=discord.File(image_path, filename="dragon_compo.png"),
+                allowed_mentions=discord.AllowedMentions(roles=True, users=True),
+            )
+        else:
+            await thread.send(
+                content=ping_text,
+                embed=warning_embed(
+                    "Imagen de composición no encontrada",
+                    "No se ha encontrado `assets/dragon_compo.png`.",
+                ),
+                allowed_mentions=discord.AllowedMentions(roles=True, users=True),
+            )
 
         await thread.send(embed=build_help_embed())
 

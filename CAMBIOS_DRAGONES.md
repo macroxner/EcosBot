@@ -50,3 +50,12 @@ El calendario automático de Dragones se publica en `CALENDAR_CHANNEL` y el cont
 - `?profile` incluye Dragones.
 - `?achievements` incluye logros de 10, 50 y 100 Dragones y otorga roles automáticamente.
 - Todos los mensajes visibles de los comandos se han migrado a embeds.
+
+
+## Ajuste de composición v3
+- Los dos Juradores aparecen juntos.
+- DPS 1-5 son las posiciones de ballesta/ranged DPS.
+- DPS 6 es Lightcaller.
+- DPS 7 es Flamígero/Fuego.
+- Al crear un Dragón, el hilo menciona automáticamente los IDs 1338207294579539991, 1332749148000227369 y 1540712364452610178.
+- El hilo adjunta `assets/dragon_compo.png` con la tabla de builds aportada.
