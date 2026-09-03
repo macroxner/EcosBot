@@ -29,6 +29,7 @@ async def setup_hook():
     await bot.load_extension("cogs.balance")
     await bot.load_extension("cogs.ecoins")
     await bot.load_extension("cogs.activities")
+    await bot.load_extension("cogs.autoroles")
     await bot.load_extension("cogs.attendance")
     await bot.load_extension("cogs.dragons")
     await bot.load_extension("cogs.loot")
