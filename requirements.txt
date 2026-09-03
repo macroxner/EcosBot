@@ -1,4 +1,6 @@
+discord.py>=2.5,<3
+aiohttp>=3.9
+python-dotenv
 PyNaCl
 davey
 wavelink
-python-dotenv

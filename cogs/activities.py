@@ -227,40 +227,75 @@ def format_fill_queue(activity):
 def render_activity_message(activity):
     creator = activity["creator"]
 
-    lines = [
-        f"**{activity['tier']} {activity['fecha']} {activity['hora_inicio']} - {activity['hora_fin']} {creator.display_name}**",
-        "",
-        f"Hora: {activity['hora_inicio']} - {activity['hora_fin']} España",
-        f"Fecha: {activity['fecha']}",
-        f"Maseo: {activity['maseo']}",
-        "",
-        "HEALER | SWAP arma 6.4 / 7.3 | offhand 7.3",
-        "FALCES: | 6.4 2 stats (10% daño mínimo) || 7.4 (1 stat)",
-        "COMIDA | tortilla 7.1 |",
-        "POCIONES | SC acido t3 60-100 | Falce energia t4 40",
-        ""
-    ]
+    embed = discord.Embed(
+        title=f"⚔️ Avaloniana {activity['tier']} · {activity['fecha']}",
+        description=(
+            f"🕒 **{activity['hora_inicio']} - {activity['hora_fin']} España**\n"
+            f"👤 **Caller:** {creator.mention}\n"
+            f"📍 **Maseo:** {activity['maseo']}"
+        ),
+        color=discord.Color.dark_gold()
+    )
 
+    embed.add_field(
+        name="📦 Requisitos",
+        value=(
+            "🩺 **Healer:** swap arma 6.4 / 7.3 · offhand 7.3\n"
+            "⚔️ **Falces:** 6.4 2 stats (10% daño mínimo) · 7.4 1 stat\n"
+            "🍳 **Comida:** tortilla 7.1\n"
+            "🧪 **Pociones:** SC ácido T3 60-100 · Falce energía T4 40"
+        ),
+        inline=False
+    )
+
+    party_lines = []
     for slot in activity["slots"]:
         if slot["user"]:
-            if slot.get("filled_by_fill"):
-                lines.append(f"{slot['role']} : {slot['user'].mention} *(fill)*")
-            else:
-                lines.append(f"{slot['role']} : {slot['user'].mention}")
+            suffix = " *(Fill)*" if slot.get("filled_by_fill") else ""
+            party_lines.append(
+                f"**{slot['role']}** — {slot['user'].mention}{suffix}"
+            )
         else:
-            lines.append(f"{slot['role']} :")
+            party_lines.append(f"**{slot['role']}** — `Libre`")
 
-    lines += format_fill_queue(activity)
+    embed.add_field(
+        name="👥 Party",
+        value="\n".join(party_lines),
+        inline=False
+    )
 
-    lines += [
-        "",
-        "<@&1332749148000227369> <@&1338207294579539991>",
-        f"/join {creator.display_name}",
-        "",
-        "OBLIGATORIO #forcecityoverload true"
-    ]
+    if activity["fill_queue"]:
+        fill_lines = []
+        for fill in activity["fill_queue"]:
+            line = fill["user"].mention
+            if fill["avoid"]:
+                line += f" · menos **{', '.join(fill['avoid'])}**"
 
-    return "\n".join(lines)
+            assigned = fill.get("assigned_role")
+            if assigned:
+                line += f" · asignado a **{assigned}**"
+            else:
+                line += " · `Reserva`"
+
+            fill_lines.append(line)
+
+        embed.add_field(
+            name="🟨 Fill / Reserva",
+            value="\n".join(fill_lines),
+            inline=False
+        )
+
+    embed.add_field(
+        name="🔗 Unión",
+        value=(
+            f"`/join {creator.display_name}`\n"
+            "`#forcecityoverload true`"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="EcosBot · La composición se actualiza automáticamente")
+    return embed
 
 
 class CalendarView(discord.ui.View):
@@ -303,7 +338,7 @@ class CalendarView(discord.ui.View):
     async def update(self, interaction):
         if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message(
-                "❌ Este calendario no es tuyo.",
+                embed=error_embed("Este calendario pertenece a otra persona."),
                 ephemeral=True
             )
             return
@@ -623,7 +658,7 @@ class Activities(commands.Cog):
             "fill_queue": []
         }
 
-        msg = await ctx.send(render_activity_message(activity))
+        msg = await ctx.send(embed=render_activity_message(activity))
 
         fame_cog = self.bot.get_cog("FameTracker")
 
@@ -655,17 +690,19 @@ class Activities(commands.Cog):
             "message_id": msg.id
         }
 
-        await thread.send(
-            "Escribid aquí cosas como:\n"
-            "`x falce`, `x healer`, `x mh`, `x scout`, `x offtank`\n\n"
-            "Para fill:\n"
-            "`x fill`\n"
-            "`x fill menos scout`\n"
-            "`x fill menos sc`\n"
-            "`x fill menos healer`\n\n"
-            "Para borrarte de la lista escribe: `signoff`\n"
-            "Para borrar a otra persona escribe: `signoff @usuario`"
+        instructions = info_embed(
+            "Cómo apuntarse",
+            (
+                "Escribe **siempre `x` delante del rol**.\n\n"
+                "👤 **Para ti:** `x falce`, `x healer`, `x mh`, `x scout`, `x offtank`\n"
+                "👥 **Para otra persona:** `x falce @usuario`, `x healer @usuario`\n\n"
+                "🟨 **Fill:** `x fill` o `x fill @usuario`\n"
+                "Puedes excluir roles: `x fill menos scout`, `x fill menos sc @usuario`\n\n"
+                "🚪 **Salir:** `signoff`\n"
+                "🚪 **Quitar a otra persona:** `signoff @usuario`"
+            )
         )
+        await thread.send(embed=instructions)
 
         await send_log(
             self.bot,
@@ -711,23 +748,13 @@ class Activities(commands.Cog):
                     target_user.id
                 )
 
-                await main_message.edit(content=render_activity_message(activity))
+                await main_message.edit(content=None, embed=render_activity_message(activity))
                 await message.add_reaction("✅")
             else:
                 await message.add_reaction("❌")
 
         elif role:
-            # Por defecto, se apunta la persona que escribe el mensaje.
-            target_user = message.author
-
-            # Si menciona a alguien, apuntamos a esa persona.
-            # Ejemplos:
-            # x falce @usuario
-            # x healer @usuario
-            # x fill @usuario
-            # x fill menos scout @usuario
-            if message.mentions:
-                target_user = message.mentions[0]
+            target_user = message.mentions[0] if message.mentions else message.author
 
             success, reason = add_user_to_activity(
                 activity,
@@ -743,31 +770,24 @@ class Activities(commands.Cog):
                     avoid_roles = ",".join(
                         parse_fill_avoid(message.content)
                     )
-        
+
                 database.add_scheduled_ava_participant(
                     data["message_id"],
                     target_user.id,
                     role,
                     avoid_roles
                 )
-        
-                await main_message.edit(
-                    content=render_activity_message(activity)
-                )
 
+                await main_message.edit(
+                    content=None,
+                    embed=render_activity_message(activity)
+                )
                 await message.add_reaction("✅")
 
             else:
                 if reason == "already_registered":
-                    existing_slot = get_user_slot(
-                        activity,
-                        target_user.id
-                    )
-
-                    existing_fill = get_user_fill(
-                        activity,
-                        target_user.id
-                    )
+                    existing_slot = get_user_slot(activity, target_user.id)
+                    existing_fill = get_user_fill(activity, target_user.id)
 
                     if existing_slot:
                         await message.channel.send(
@@ -778,7 +798,6 @@ class Activities(commands.Cog):
                                 "Usuario ya apuntado"
                             )
                         )
-
                     elif existing_fill:
                         await message.channel.send(
                             embed=error_embed(

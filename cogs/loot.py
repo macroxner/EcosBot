@@ -4,6 +4,7 @@ from discord.ext import commands
 import database
 import config
 from utils.logger import send_log
+from utils.embeds import error_embed, economy_embed
 
 
 ECOINS_CALLER = 10
@@ -195,14 +196,14 @@ class Loot(commands.Cog):
                 result_lines.append(f"✅ <@{user_id}> +{amount:,} balance ({role})")
 
         if not result_lines:
-            await ctx.send("❌ No he encontrado pagos válidos.")
+            await ctx.send(embed=error_embed("No he encontrado pagos válidos."))
             return
 
-        await ctx.send(
-            "💰 **Loot procesado correctamente**\n\n"
-            + "\n".join(result_lines)
-            + f"\n\n**Total añadido:** {total_added:,}"
+        embed = economy_embed(
+            "Loot procesado correctamente",
+            "\n".join(result_lines) + f"\n\n💰 **Total añadido:** `{total_added:,}`"
         )
+        await ctx.send(embed=embed)
 
         await send_log(
             self.bot,

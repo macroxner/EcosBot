@@ -4,8 +4,6 @@ from dotenv import load_dotenv
 import os
 import database
 
-GUILD_ID = 1332738792746123426
-
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -14,28 +12,24 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
+database.migrate_existing_database()
 database.create_tables()
 
-bot = commands.Bot(
-    command_prefix="?",
-    intents=intents
-)
-
+bot = commands.Bot(command_prefix="?", intents=intents)
 
 @bot.event
 async def on_ready():
-    database.migrate_existing_database()
     database.create_tables()
 
     print(f"Base de datos activa: {database.DB_NAME}")
     print(f"Bot conectado como {bot.user}")
-
 
 @bot.event
 async def setup_hook():
     await bot.load_extension("cogs.balance")
     await bot.load_extension("cogs.ecoins")
     await bot.load_extension("cogs.activities")
+    await bot.load_extension("cogs.dragons")
     await bot.load_extension("cogs.loot")
     await bot.load_extension("cogs.warnings")
     await bot.load_extension("cogs.profile")
@@ -49,16 +43,5 @@ async def setup_hook():
     await bot.load_extension("cogs.fame")
     await bot.load_extension("cogs.ava_fame_stats")
     await bot.load_extension("cogs.audio")
-
-    # Sincroniza /addbal, /removebal y cualquier otro slash command.
-    guild = discord.Object(id=GUILD_ID)
-
-    bot.tree.copy_global_to(guild=guild)
-
-    synced = await bot.tree.sync(guild=guild)
-
-    print(
-        f"Slash commands sincronizados en servidor: {len(synced)}"
-    )
 
 bot.run(TOKEN)

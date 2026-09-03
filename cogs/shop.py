@@ -5,6 +5,7 @@ import random
 import database
 import config
 from utils.logger import send_log
+from utils.embeds import error_embed, info_embed, success_embed
 import asyncio
 
 
@@ -14,56 +15,49 @@ SHOP_ITEMS = {
         "cost": 50,
         "description": "Mutea a alguien durante 1 minuto.",
         "needs_target": True,
-        "type": "target",
-        
+        "type": "target"
     },
     "skill": {
         "name": "💀 Skill Issue 20 min",
         "cost": 75,
         "description": "Da el rol Skill Issue durante 20 minutos.",
         "needs_target": True,
-        "type": "target",
-        "id_rol": 1535231201193893998
-        # PRUEBAS "id_rol":1535233450632814663
+        "type": "target"
     },
     "npc": {
         "name": "🤖 NPC Energy 20 min",
         "cost": 40,
         "description": "Da el rol NPC Energy durante 20 minutos.",
         "needs_target": True,
-        "type": "target",
-        "id_rol": 1529106389312602183
+        "type": "target"
     },
     "braincell": {
         "name": "🧠 Last Braincell 20 min",
         "cost": 45,
         "description": "Da el rol Last Braincell durante 20 minutos.",
         "needs_target": True,
-        "type": "target",
-        "id_rol": 1528791663030440058
+        "type": "target"
     },
     "salty": {
         "name": "🧂 Salty 20 min",
         "cost": 35,
         "description": "Da el rol Salty durante 20 minutos.",
         "needs_target": True,
-        "type": "target",
-        "id_rol": 1535230451071852656
+        "type": "target"
     },
     "maincharacter": {
         "name": "👑 Main Character 20 min",
         "cost": 60,
         "description": "Da el rol Main Character durante 20 minutos.",
         "needs_target": True,
-        "type": "target",
-        "id_rol": 1535230938185994250
+        "type": "target"
     },
     "nickname": {
         "name": "📝 Cambiar nick 20 min",
         "cost": 80,
         "description": "Cambia el nick de alguien durante 20 minutos.",
         "needs_target": True,
-        "type": "nickname",
+        "type": "nickname"
     },
 }
 
@@ -73,11 +67,11 @@ def get_user_ecoins(user_id):
     return ecoins
 
 
-async def give_temp_role(guild, member, role_id, minutes=20):
-    role = discord.utils.get(guild.roles, id=role_id)
+async def give_temp_role(guild, member, role_name, minutes=20):
+    role = discord.utils.get(guild.roles, name=role_name)
 
-    #if role is None:
-    #    role = await guild.create_role(name=role_name)
+    if role is None:
+        role = await guild.create_role(name=role_name)
 
     await member.add_roles(role)
 
@@ -119,7 +113,7 @@ class NicknameModal(discord.ui.Modal, title="Cambiar nick temporal"):
 
         if ecoins < cost:
             await interaction.response.send_message(
-                f"❌ No tienes suficientes Ecoins. Necesitas **{cost}**.",
+                embed=error_embed(f"No tienes suficientes Ecoins. Necesitas **{cost}**."),
                 ephemeral=True
             )
             return
@@ -128,8 +122,11 @@ class NicknameModal(discord.ui.Modal, title="Cambiar nick temporal"):
         database.add_shop_purchase(self.buyer.id, self.target.id, self.item_key, cost)
 
         await interaction.response.send_message(
-            f"📝 {self.buyer.mention} ha cambiado el nick de {self.target.mention} "
-            f"a **{self.new_nick.value}** durante **20 minutos**."
+            embed=success_embed(
+                "Nick temporal aplicado",
+                f"📝 {self.buyer.mention} ha cambiado el nick de {self.target.mention} "
+                f"a **{self.new_nick.value}** durante **20 minutos**."
+            )
         )
 
         asyncio.create_task(change_temp_nickname(self.target, self.new_nick.value, 20))
@@ -148,7 +145,7 @@ class TargetSelect(discord.ui.UserSelect):
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.buyer.id:
             await interaction.response.send_message(
-                "❌ Esta compra no es tuya.",
+                embed=error_embed("Esta compra pertenece a otra persona."),
                 ephemeral=True
             )
             return
@@ -157,14 +154,14 @@ class TargetSelect(discord.ui.UserSelect):
 
         if target.bot:
             await interaction.response.send_message(
-                "❌ No puedes elegir bots.",
+                embed=error_embed("No puedes elegir bots."),
                 ephemeral=True
             )
             return
 
         if target.id == self.buyer.id:
             await interaction.response.send_message(
-                "❌ No puedes elegirte a ti mismo.",
+                embed=error_embed("No puedes elegirte a ti mismo."),
                 ephemeral=True
             )
             return
@@ -173,7 +170,7 @@ class TargetSelect(discord.ui.UserSelect):
 
         if member is None:
             await interaction.response.send_message(
-                "❌ No encuentro a ese usuario en el servidor.",
+                embed=error_embed("No encuentro a ese usuario en el servidor."),
                 ephemeral=True
             )
             return
@@ -192,13 +189,14 @@ class TargetSelect(discord.ui.UserSelect):
 
         if ecoins < cost:
             await interaction.response.send_message(
-                f"❌ No tienes suficientes Ecoins. Necesitas **{cost}**.",
+                embed=error_embed(f"No tienes suficientes Ecoins. Necesitas **{cost}**."),
                 ephemeral=True
             )
             return
 
         database.add_ecoins(self.buyer.id, -cost, f"Compra tienda: {item['name']}")
-        
+        database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
+
         msg = await apply_shop_effect(
             interaction,
             self.bot,
@@ -207,24 +205,19 @@ class TargetSelect(discord.ui.UserSelect):
             self.item_key
         )
 
-        if(msg[1]):
-            database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
-            await interaction.response.send_message(msg[0])
-        else:
-            # Comando erroneo por algun motivo
-            await interaction.response.send_message(msg[0])
-            database.add_ecoins(self.buyer.id, cost, f"Compra reembolsada tienda por {msg[0]}: {item['name']}")
+        await interaction.response.send_message(
+            embed=success_embed("Compra aplicada", msg)
+        )
 
-        if(msg[1]):
-            await send_log(
-                        self.bot,
-                        "🛒 Compra de tienda",
-                        f"Comprador: {self.buyer.mention}\n"
-                        f"Objetivo: {member.mention}\n"
-                        f"Producto: {item['name']}\n"
-                        f"Coste: {cost} Ecoins",
-                        discord.Color.purple()
-                    )
+        await send_log(
+            self.bot,
+            "🛒 Compra de tienda",
+            f"Comprador: {self.buyer.mention}\n"
+            f"Objetivo: {member.mention}\n"
+            f"Producto: {item['name']}\n"
+            f"Coste: {cost} Ecoins",
+            discord.Color.purple()
+        )
 
 
 class TargetView(discord.ui.View):
@@ -258,7 +251,7 @@ class ShopSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         if interaction.channel.id != config.SHOP_CHANNEL:
             await interaction.response.send_message(
-                "❌ La tienda solo se puede usar en el canal de tienda.",
+                embed=error_embed("La tienda solo se puede usar en el canal de tienda."),
                 ephemeral=True
             )
             return
@@ -271,24 +264,24 @@ class ShopSelect(discord.ui.Select):
 
         if ecoins < cost:
             await interaction.response.send_message(
-                f"❌ No tienes suficientes Ecoins. Tienes **{ecoins}**, necesitas **{cost}**.",
+                embed=error_embed(
+                    f"No tienes suficientes Ecoins. Tienes **{ecoins}** y necesitas **{cost}**."
+                ),
                 ephemeral=True
             )
             return
 
         if item["needs_target"]:
             await interaction.response.send_message(
-                f"Has elegido **{item['name']}**.\nAhora elige a la víctima:",
+                embed=info_embed(
+                    "Elige objetivo",
+                    f"Has elegido **{item['name']}**. Ahora selecciona a la víctima."
+                ),
                 view=TargetView(self.bot, interaction.user, item_key),
                 ephemeral=True
             )
 
-async def mute_member_async(member):
-    await member.edit(mute = True)
-            
-    await asyncio.sleep(60);
-    
-    await member.edit(mute = False)
+
 class ShopView(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=180)
@@ -299,33 +292,32 @@ async def apply_shop_effect(interaction, bot, buyer, member, item_key):
     guild = interaction.guild
 
     if item_key == "mute":
-        member_data = await member.fetch_voice()
-        if(member_data.mute):
-            return [f"{member.mention} ya está silenciado, compra reembolsada.", False]
-        
-        asyncio.create_task(mute_member_async(member=member))
-        return [f"🔇 {buyer.mention} ha comprado un **mute de 1 minuto** para {member.mention}.", True]
-    
+        await member.timeout(
+            discord.utils.utcnow() + timedelta(minutes=1),
+            reason=f"Mute comprado por {buyer}"
+        )
+
+        return f"🔇 {buyer.mention} ha comprado un **mute de 1 minuto** para {member.mention}."
 
     if item_key == "skill":
-        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["skill"]["id_rol"], 20))
-        return [f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **20 minutos**.", True]
+        asyncio.create_task(give_temp_role(guild, member, "Skill Issue", 20))
+        return f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **20 minutos**."
 
     if item_key == "npc":
-        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["npc"]["id_rol"], 20))
-        return [f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **20 minutos**.", True]
+        asyncio.create_task(give_temp_role(guild, member, "NPC Energy", 20))
+        return f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **20 minutos**."
 
     if item_key == "braincell":
-        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["braincell"]["id_rol"], 20))
-        return [f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **20 minutos**.", True]
+        asyncio.create_task(give_temp_role(guild, member, "Last Braincell", 20))
+        return f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **20 minutos**."
 
     if item_key == "salty":
-        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["salty"]["id_rol"], 20))
-        return [f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **20 minutos**.", True]
+        asyncio.create_task(give_temp_role(guild, member, "Salty", 20))
+        return f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **20 minutos**."
 
     if item_key == "maincharacter":
-        asyncio.create_task(give_temp_role(guild, member, SHOP_ITEMS["maincharacter"]["id_rol"], 20))
-        return [f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **20 minutos**.", True]
+        asyncio.create_task(give_temp_role(guild, member, "Main Character", 20))
+        return f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **20 minutos**."
 
     return "Compra realizada."
 
@@ -337,7 +329,7 @@ class Shop(commands.Cog):
     @commands.command(name="shop")
     async def shop(self, ctx):
         if ctx.channel.id != config.SHOP_CHANNEL:
-            await ctx.send("❌ La tienda solo se puede usar en el canal de tienda.")
+            await ctx.send(embed=error_embed("La tienda solo se puede usar en el canal de tienda."))
             return
 
         embed = discord.Embed(
@@ -353,6 +345,7 @@ class Shop(commands.Cog):
                 inline=False
             )
 
+        embed.set_footer(text="EcosBot · EcoShop")
         await ctx.send(embed=embed, view=ShopView(self.bot))
 
 

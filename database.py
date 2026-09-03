@@ -46,19 +46,8 @@ def create_tables():
     cursor = conn.cursor()
 
     try:
-        cursor.execute(
-            "ALTER TABLE scheduled_avas "
-            "ADD COLUMN fame_processed INTEGER DEFAULT 0"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute(
-            "ALTER TABLE scheduled_ava_participants "
-            "ADD COLUMN avoid_roles TEXT DEFAULT ''"
-        )
-    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE scheduled_avas ADD COLUMN fame_processed INTEGER DEFAULT 0")
+    except:
         pass
 
     cursor.execute("""
@@ -109,7 +98,6 @@ def create_tables():
         ava_message_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
         role TEXT NOT NULL,
-        avoid_roles TEXT DEFAULT '',
         PRIMARY KEY (ava_message_id, user_id)
     )
     """)
@@ -209,6 +197,53 @@ def create_tables():
         item_key TEXT NOT NULL,
         cost INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # Persistencia de exclusiones de Fill en Avalonianas.
+    try:
+        cursor.execute(
+            "ALTER TABLE scheduled_ava_participants "
+            "ADD COLUMN avoid_roles TEXT DEFAULT ''"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_dragons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER NOT NULL UNIQUE,
+        thread_id INTEGER NOT NULL UNIQUE,
+        channel_id INTEGER NOT NULL,
+        creator_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        reminder_sent INTEGER DEFAULT 0,
+        stats_processed INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_dragon_participants (
+        dragon_message_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        avoid_roles TEXT DEFAULT '',
+        PRIMARY KEY (dragon_message_id, user_id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dragon_participations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dragon_message_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(dragon_message_id, user_id)
     )
     """)
 
@@ -712,21 +747,27 @@ def get_calendar_avas(limit=10):
     return result
 
 def delete_finished_avas():
+    """
+    Conserva el historial reciente para estadísticas e inactividad.
+    Solo limpia Avalonianas ya procesadas y muy antiguas.
+    """
     conn = connect()
     cursor = conn.cursor()
 
     cursor.execute("""
     DELETE FROM scheduled_avas
-    WHERE datetime(
+    WHERE fame_processed = 1
+      AND datetime(
         substr(date, 7, 4) || '-' ||
         substr(date, 4, 2) || '-' ||
         substr(date, 1, 2) || ' ' ||
         end_time
-    ) <= datetime('now', 'localtime')
+      ) <= datetime('now', '-180 days', 'localtime')
     """)
 
     conn.commit()
     conn.close()
+
 
 def has_achievement(user_id, achievement_key):
     conn = connect()
@@ -811,28 +852,23 @@ def get_latest_scheduled_ava_message_id():
 
     return result[0] if result else None
 
-def add_scheduled_ava_participant(
-    ava_message_id,
-    user_id,
-    role,
-    avoid_roles=""
-):
+def add_scheduled_ava_participant(ava_message_id, user_id, role, avoid_roles=""):
     conn = connect()
     cursor = conn.cursor()
 
-    cursor.execute("""
-    INSERT INTO scheduled_ava_participants
-    (ava_message_id, user_id, role, avoid_roles)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(ava_message_id, user_id) DO UPDATE SET
-        role = excluded.role,
-        avoid_roles = excluded.avoid_roles
-    """, (
-        ava_message_id,
-        user_id,
-        role,
-        avoid_roles or ""
-    ))
+    try:
+        cursor.execute("""
+        INSERT OR REPLACE INTO scheduled_ava_participants
+        (ava_message_id, user_id, role, avoid_roles)
+        VALUES (?, ?, ?, ?)
+        """, (ava_message_id, user_id, role, avoid_roles))
+    except sqlite3.OperationalError:
+        # Compatibilidad temporal con una base antigua antes de la migración.
+        cursor.execute("""
+        INSERT OR REPLACE INTO scheduled_ava_participants
+        (ava_message_id, user_id, role)
+        VALUES (?, ?, ?)
+        """, (ava_message_id, user_id, role))
 
     conn.commit()
     conn.close()
@@ -862,91 +898,6 @@ def get_scheduled_ava_participants(ava_message_id):
     """, (ava_message_id,))
 
     result = cursor.fetchall()
-    conn.close()
-    return result
-
-
-def get_scheduled_ava_participants_for_restore(ava_message_id):
-    conn = connect()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    SELECT user_id, role, COALESCE(avoid_roles, '')
-    FROM scheduled_ava_participants
-    WHERE ava_message_id = ?
-    ORDER BY rowid ASC
-    """, (ava_message_id,))
-
-    result = cursor.fetchall()
-    conn.close()
-    return result
-
-
-def get_active_avas_for_restore():
-    """
-    Devuelve todas las avas cuyo final todavía no ha pasado.
-    Incluye los IDs necesarios para recuperar el mensaje y el hilo.
-    """
-    conn = connect()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    SELECT
-        message_id,
-        thread_id,
-        channel_id,
-        creator_id,
-        tier,
-        date,
-        start_time,
-        end_time,
-        maseo
-    FROM scheduled_avas
-    WHERE datetime(
-        substr(date, 7, 4) || '-' ||
-        substr(date, 4, 2) || '-' ||
-        substr(date, 1, 2) || ' ' ||
-        end_time
-    ) > datetime('now', 'localtime')
-    ORDER BY
-        substr(date, 7, 4) || '-' ||
-        substr(date, 4, 2) || '-' ||
-        substr(date, 1, 2),
-        start_time ASC
-    """)
-
-    result = cursor.fetchall()
-    conn.close()
-    return result
-
-
-def get_scheduled_ava_by_thread(thread_id):
-    """
-    Recupera una ava concreta por el ID de su hilo.
-
-    Se usa como recuperación bajo demanda cuando el hilo no está
-    presente en activity_messages.
-    """
-    conn = connect()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    SELECT
-        message_id,
-        thread_id,
-        channel_id,
-        creator_id,
-        tier,
-        date,
-        start_time,
-        end_time,
-        maseo
-    FROM scheduled_avas
-    WHERE thread_id = ?
-    LIMIT 1
-    """, (thread_id,))
-
-    result = cursor.fetchone()
     conn.close()
     return result
 
@@ -1193,7 +1144,11 @@ def get_inactive_registered_players(days=14):
     SELECT
         rp.discord_id,
         rp.albion_name,
-        MAX(sa.created_at) as last_ava
+        MAX(
+            substr(sa.date, 7, 4) || '-' ||
+            substr(sa.date, 4, 2) || '-' ||
+            substr(sa.date, 1, 2)
+        ) AS last_ava
     FROM registered_players rp
     LEFT JOIN scheduled_ava_participants sap
         ON rp.discord_id = sap.user_id
@@ -1201,10 +1156,335 @@ def get_inactive_registered_players(days=14):
         ON sap.ava_message_id = sa.message_id
     GROUP BY rp.discord_id, rp.albion_name
     HAVING last_ava IS NULL
-       OR datetime(last_ava) <= datetime('now', ?)
+       OR date(last_ava) <= date('now', ?)
     ORDER BY last_ava ASC
-    """, (f"-{days} days",))
+    """, (f"-{int(days)} days",))
 
     result = cursor.fetchall()
     conn.close()
     return result
+
+
+def get_active_avas_for_restore():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT message_id, thread_id, channel_id, creator_id,
+           tier, date, start_time, end_time, maseo
+    FROM scheduled_avas
+    WHERE datetime(
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2) || ' ' ||
+        end_time
+    ) > datetime('now', 'localtime')
+    ORDER BY id ASC
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_scheduled_ava_by_thread(thread_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT message_id, thread_id, channel_id, creator_id,
+           tier, date, start_time, end_time, maseo
+    FROM scheduled_avas
+    WHERE thread_id = ?
+    LIMIT 1
+    """, (thread_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+
+def get_scheduled_ava_participants_for_restore(ava_message_id):
+    conn = connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        SELECT user_id, role, COALESCE(avoid_roles, '')
+        FROM scheduled_ava_participants
+        WHERE ava_message_id = ?
+        ORDER BY rowid ASC
+        """, (ava_message_id,))
+    except sqlite3.OperationalError:
+        cursor.execute("""
+        SELECT user_id, role, ''
+        FROM scheduled_ava_participants
+        WHERE ava_message_id = ?
+        ORDER BY rowid ASC
+        """, (ava_message_id,))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+# ============================================================
+# DRAGONES
+# ============================================================
+
+def add_scheduled_dragon(message_id, thread_id, channel_id, creator_id, date, start_time, end_time):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO scheduled_dragons
+    (message_id, thread_id, channel_id, creator_id, date, start_time, end_time)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (message_id, thread_id, channel_id, creator_id, date, start_time, end_time))
+    conn.commit()
+    conn.close()
+
+
+def add_scheduled_dragon_participant(dragon_message_id, user_id, role, avoid_roles=""):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO scheduled_dragon_participants
+    (dragon_message_id, user_id, role, avoid_roles)
+    VALUES (?, ?, ?, ?)
+    """, (dragon_message_id, user_id, role, avoid_roles))
+    conn.commit()
+    conn.close()
+
+
+def remove_scheduled_dragon_participant(dragon_message_id, user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    DELETE FROM scheduled_dragon_participants
+    WHERE dragon_message_id = ? AND user_id = ?
+    """, (dragon_message_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_scheduled_dragon_participants(dragon_message_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT user_id, role, COALESCE(avoid_roles, '')
+    FROM scheduled_dragon_participants
+    WHERE dragon_message_id = ?
+    ORDER BY rowid ASC
+    """, (dragon_message_id,))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_active_dragons_for_restore():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT message_id, thread_id, channel_id, creator_id,
+           date, start_time, end_time
+    FROM scheduled_dragons
+    WHERE datetime(
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2) || ' ' ||
+        end_time
+    ) > datetime('now', 'localtime')
+    ORDER BY id ASC
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_scheduled_dragon_by_thread(thread_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT message_id, thread_id, channel_id, creator_id,
+           date, start_time, end_time
+    FROM scheduled_dragons
+    WHERE thread_id = ?
+    LIMIT 1
+    """, (thread_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+
+def get_calendar_dragons(limit=20):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT date, start_time, end_time, creator_id, thread_id
+    FROM scheduled_dragons
+    WHERE datetime(
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2) || ' ' ||
+        end_time
+    ) > datetime('now', 'localtime')
+    ORDER BY
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2),
+        start_time ASC
+    LIMIT ?
+    """, (limit,))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_pending_dragon_reminders():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT id, thread_id, creator_id, date, start_time, end_time
+    FROM scheduled_dragons
+    WHERE reminder_sent = 0
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def mark_dragon_reminder_sent(dragon_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE scheduled_dragons
+    SET reminder_sent = 1
+    WHERE id = ?
+    """, (dragon_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_finished_dragons_without_stats():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT message_id, date
+    FROM scheduled_dragons
+    WHERE stats_processed = 0
+      AND datetime(
+        substr(date, 7, 4) || '-' ||
+        substr(date, 4, 2) || '-' ||
+        substr(date, 1, 2) || ' ' ||
+        end_time
+      ) <= datetime('now', 'localtime')
+    """)
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def finalize_dragon_participations(dragon_message_id, event_date):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR IGNORE INTO dragon_participations
+    (dragon_message_id, user_id, role, event_date)
+    SELECT dragon_message_id, user_id, role, ?
+    FROM scheduled_dragon_participants
+    WHERE dragon_message_id = ?
+    """, (event_date, dragon_message_id))
+    cursor.execute("""
+    UPDATE scheduled_dragons
+    SET stats_processed = 1
+    WHERE message_id = ?
+    """, (dragon_message_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_user_dragon_stats(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM dragon_participations
+    WHERE user_id = ?
+    """, (user_id,))
+    total = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT role, COUNT(*) AS total
+    FROM dragon_participations
+    WHERE user_id = ?
+    GROUP BY role
+    ORDER BY total DESC, role ASC
+    """, (user_id,))
+    roles = cursor.fetchall()
+    conn.close()
+    return total, roles
+
+
+def get_top_dragons(limit=10):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT user_id, COUNT(*) AS total
+    FROM dragon_participations
+    GROUP BY user_id
+    ORDER BY total DESC, user_id ASC
+    LIMIT ?
+    """, (limit,))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_dragon_role_top(role, limit=10):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT user_id, COUNT(*) AS total
+    FROM dragon_participations
+    WHERE role = ?
+    GROUP BY user_id
+    ORDER BY total DESC, user_id ASC
+    LIMIT ?
+    """, (role, limit))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_inactive_dragon_players(days=14):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT
+        rp.discord_id,
+        rp.albion_name,
+        MAX(
+            substr(dp.event_date, 7, 4) || '-' ||
+            substr(dp.event_date, 4, 2) || '-' ||
+            substr(dp.event_date, 1, 2)
+        ) AS last_dragon
+    FROM registered_players rp
+    LEFT JOIN dragon_participations dp
+        ON rp.discord_id = dp.user_id
+    GROUP BY rp.discord_id, rp.albion_name
+    HAVING last_dragon IS NULL
+       OR date(last_dragon) <= date('now', ?)
+    ORDER BY last_dragon ASC
+    """, (f"-{int(days)} days",))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+
+def get_dragon_dashboard_stats():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM scheduled_dragons WHERE stats_processed = 1")
+    dragon_count = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM dragon_participations")
+    participations = cursor.fetchone()[0]
+    conn.close()
+    return {
+        "dragon_count": dragon_count,
+        "dragon_participations": participations,
+    }
+
