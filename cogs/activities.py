@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands, tasks
 import database
 import config
+import utils.Verificator as Verificator
 from utils.logger import send_log
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -848,29 +849,67 @@ class Activities(commands.Cog):
 
 
     async def update_auto_calendar_message(self):
+        """Actualiza o crea el mensaje fijo del calendario automático de Avas.
+
+        Usa fetch_channel como respaldo porque get_channel puede devolver None
+        durante el arranque o si el canal todavía no está en caché.
+        """
         channel = self.bot.get_channel(config.CALENDAR_CHANNEL)
 
-        if not channel:
-            return
-
-        database.delete_finished_avas()
-        avas = database.get_calendar_avas(50)
-
-        guild = channel.guild
-        embed = self.build_auto_calendar_embed(guild, avas)
-
-        message_id = database.get_setting("calendar_message_id")
-
-        if message_id:
+        if channel is None:
             try:
-                msg = await channel.fetch_message(int(message_id))
-                await msg.edit(embed=embed)
-                return
-            except:
-                pass
+                channel = await self.bot.fetch_channel(config.CALENDAR_CHANNEL)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as error:
+                print(
+                    "[CALENDARIO AVAS] No puedo acceder al canal "
+                    f"{config.CALENDAR_CHANNEL}: {type(error).__name__}: {error}"
+                )
+                return False
 
-        msg = await channel.send(embed=embed)
-        database.set_setting("calendar_message_id", msg.id)
+        try:
+            database.delete_finished_avas()
+            avas = database.get_calendar_avas(50)
+
+            guild = channel.guild
+            embed = self.build_auto_calendar_embed(guild, avas)
+
+            message_id = database.get_setting("calendar_message_id")
+
+            if message_id:
+                try:
+                    msg = await channel.fetch_message(int(message_id))
+                    await msg.edit(embed=embed)
+                    return True
+                except discord.NotFound:
+                    # El mensaje fue borrado: creamos uno nuevo debajo.
+                    pass
+                except discord.Forbidden as error:
+                    print(
+                        "[CALENDARIO AVAS] Sin permisos para editar el mensaje: "
+                        f"{error}"
+                    )
+                    return False
+                except discord.HTTPException as error:
+                    print(
+                        "[CALENDARIO AVAS] Error de Discord al editar: "
+                        f"{error}"
+                    )
+                    return False
+                except (TypeError, ValueError):
+                    # ID antiguo/corrupto en bot_settings.
+                    pass
+
+            msg = await channel.send(embed=embed)
+            database.set_setting("calendar_message_id", msg.id)
+            return True
+
+        except Exception as error:
+            # Importantísimo: no dejamos que una excepción mate el tasks.loop.
+            print(
+                "[CALENDARIO AVAS] Error actualizando calendario: "
+                f"{type(error).__name__}: {error}"
+            )
+            return False
 
 
     
@@ -928,7 +967,38 @@ class Activities(commands.Cog):
 
     @tasks.loop(minutes=10)
     async def auto_calendar_loop(self):
+        # update_auto_calendar_message ya captura sus propios errores para que
+        # el loop no muera si Discord falla una vez o el canal no está en caché.
         await self.update_auto_calendar_message()
+
+
+    @auto_calendar_loop.before_loop
+    async def before_auto_calendar_loop(self):
+        # Evita la carrera del arranque: no intentamos buscar el canal hasta
+        # que el bot esté completamente conectado y la caché esté lista.
+        await self.bot.wait_until_ready()
+
+
+    @commands.command(name="refreshcalendar", aliases=["refreshava", "updatecalendar"])
+    @commands.check(Verificator.usuario_puede_ejecutar_comando)
+    async def refresh_calendar(self, ctx):
+        ok = await self.update_auto_calendar_message()
+
+        if ok:
+            await ctx.send(
+                embed=success_embed(
+                    "Calendario actualizado",
+                    "El calendario automático de Avalonianas se ha actualizado correctamente."
+                )
+            )
+        else:
+            await ctx.send(
+                embed=error_embed(
+                    "No he podido actualizar el calendario. "
+                    "Revisa los logs de Northflank para ver el motivo.",
+                    "Error de calendario"
+                )
+            )
 
 
     @tasks.loop(hours=6)
