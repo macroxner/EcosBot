@@ -11,51 +11,51 @@ import asyncio
 
 SHOP_ITEMS = {
     "mute": {
-        "name": "🔇 Mute 1 minuto",
+        "name": "🔇 Mute 2 minutos",
         "cost": 50,
-        "description": "Mutea a alguien durante 1 minuto.",
+        "description": "Mutea a alguien durante 2 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "skill": {
-        "name": "💀 Skill Issue 20 min",
+        "name": "💀 Skill Issue 30 min",
         "cost": 75,
-        "description": "Da el rol Skill Issue durante 20 minutos.",
+        "description": "Da el rol Skill Issue durante 30 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "npc": {
-        "name": "🤖 NPC Energy 20 min",
+        "name": "🤖 NPC Energy 30 min",
         "cost": 40,
-        "description": "Da el rol NPC Energy durante 20 minutos.",
+        "description": "Da el rol NPC Energy durante 30 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "braincell": {
-        "name": "🧠 Last Braincell 20 min",
+        "name": "🧠 Last Braincell 30 min",
         "cost": 45,
-        "description": "Da el rol Last Braincell durante 20 minutos.",
+        "description": "Da el rol Last Braincell durante 30 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "salty": {
-        "name": "🧂 Salty 20 min",
+        "name": "🧂 Salty 30 min",
         "cost": 35,
-        "description": "Da el rol Salty durante 20 minutos.",
+        "description": "Da el rol Salty durante 30 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "maincharacter": {
-        "name": "👑 Main Character 20 min",
+        "name": "👑 Main Character 30 min",
         "cost": 60,
-        "description": "Da el rol Main Character durante 20 minutos.",
+        "description": "Da el rol Main Character durante 30 minutos.",
         "needs_target": True,
         "type": "target"
     },
     "nickname": {
-        "name": "📝 Cambiar nick 20 min",
+        "name": "📝 Cambiar nick 30 min",
         "cost": 80,
-        "description": "Cambia el nick de alguien durante 20 minutos.",
+        "description": "Cambia el nick de alguien durante 30 minutos.",
         "needs_target": True,
         "type": "nickname"
     },
@@ -67,7 +67,7 @@ def get_user_ecoins(user_id):
     return ecoins
 
 
-async def give_temp_role(guild, member, role_name, minutes=20):
+async def give_temp_role(guild, member, role_name, minutes=30):
     role = discord.utils.get(guild.roles, name=role_name)
 
     if role is None:
@@ -81,7 +81,7 @@ async def give_temp_role(guild, member, role_name, minutes=20):
         await member.remove_roles(role)
 
 
-async def change_temp_nickname(member, new_nick, minutes=20):
+async def change_temp_nickname(member, new_nick, minutes=30):
     old_nick = member.nick
 
     await member.edit(nick=new_nick)
@@ -125,11 +125,11 @@ class NicknameModal(discord.ui.Modal, title="Cambiar nick temporal"):
             embed=success_embed(
                 "Nick temporal aplicado",
                 f"📝 {self.buyer.mention} ha cambiado el nick de {self.target.mention} "
-                f"a **{self.new_nick.value}** durante **20 minutos**."
+                f"a **{self.new_nick.value}** durante **30 minutos**."
             )
         )
 
-        asyncio.create_task(change_temp_nickname(self.target, self.new_nick.value, 20))
+        asyncio.create_task(change_temp_nickname(self.target, self.new_nick.value, 30))
 
 class TargetSelect(discord.ui.UserSelect):
     def __init__(self, bot, buyer, item_key):
@@ -293,31 +293,31 @@ async def apply_shop_effect(interaction, bot, buyer, member, item_key):
 
     if item_key == "mute":
         await member.timeout(
-            discord.utils.utcnow() + timedelta(minutes=1),
+            discord.utils.utcnow() + timedelta(minutes=2),
             reason=f"Mute comprado por {buyer}"
         )
 
-        return f"🔇 {buyer.mention} ha comprado un **mute de 1 minuto** para {member.mention}."
+        return f"🔇 {buyer.mention} ha comprado un **mute de 2 minutos** para {member.mention}."
 
     if item_key == "skill":
-        asyncio.create_task(give_temp_role(guild, member, "Skill Issue", 20))
-        return f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, "Skill Issue", 30))
+        return f"💀 {buyer.mention} ha dado **Skill Issue** a {member.mention} durante **30 minutos**."
 
     if item_key == "npc":
-        asyncio.create_task(give_temp_role(guild, member, "NPC Energy", 20))
-        return f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, "NPC Energy", 30))
+        return f"🤖 {buyer.mention} ha dado **NPC Energy** a {member.mention} durante **30 minutos**."
 
     if item_key == "braincell":
-        asyncio.create_task(give_temp_role(guild, member, "Last Braincell", 20))
-        return f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, "Last Braincell", 30))
+        return f"🧠 {buyer.mention} ha dado **Last Braincell** a {member.mention} durante **30 minutos**."
 
     if item_key == "salty":
-        asyncio.create_task(give_temp_role(guild, member, "Salty", 20))
-        return f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, "Salty", 30))
+        return f"🧂 {buyer.mention} ha dado **Salty** a {member.mention} durante **30 minutos**."
 
     if item_key == "maincharacter":
-        asyncio.create_task(give_temp_role(guild, member, "Main Character", 20))
-        return f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **20 minutos**."
+        asyncio.create_task(give_temp_role(guild, member, "Main Character", 30))
+        return f"👑 {buyer.mention} ha convertido a {member.mention} en **Main Character** durante **30 minutos**."
 
     return "Compra realizada."
 

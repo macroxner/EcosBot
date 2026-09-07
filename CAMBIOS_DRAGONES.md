@@ -59,3 +59,9 @@ El calendario automático de Dragones se publica en `CALENDAR_CHANNEL` y el cont
 - DPS 7 es Flamígero/Fuego.
 - Al crear un Dragón, el hilo menciona automáticamente los IDs 1338207294579539991, 1332749148000227369 y 1540712364452610178.
 - El hilo adjunta `assets/dragon_compo.png` con la tabla de builds aportada.
+
+## v8
+- Nueva composición de Dragones de 20 huecos: Main Tank, 2 Offtank, Main Healer, 2 Healer Party 1, 2 Healer Party 2, Invocador Oscuro, 2 Enigmáticos y 9 DPS.
+- Nuevos alias de inscripción para Dragones, manteniendo `x` obligatorio.
+- DPS especializados se muestran como DPS Ballesta, DPS Flami o DPS Pajaro; `x dps` ocupa cualquier DPS libre.
+- EcoShop: mute pasa a 2 minutos; roles temporales y cambio de nick pasan a 30 minutos, sin modificar precios.

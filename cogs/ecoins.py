@@ -48,12 +48,12 @@ class Ecoins(commands.Cog):
 
         database.add_ecoins(ctx.author.id, -cost, reason=f"Mute comprado sobre {member}")
         await member.timeout(
-            discord.utils.utcnow() + timedelta(minutes=1),
+            discord.utils.utcnow() + timedelta(minutes=2),
             reason=f"Mute comprado por {ctx.author}"
         )
         await ctx.send(embed=success_embed(
             "Mute comprado",
-            f"🔇 {ctx.author.mention} ha gastado **{cost} Ecoins** para mutear a {member.mention} durante **1 minuto**."
+            f"🔇 {ctx.author.mention} ha gastado **{cost} Ecoins** para mutear a {member.mention} durante **2 minutos**."
         ))
 
 

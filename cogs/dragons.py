@@ -17,28 +17,26 @@ dragon_messages = {}
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 DRAGON_SLOTS = [
-    {"label": "Mangual 1", "group": "Mangual"},
-    {"label": "Mangual 2", "group": "Mangual"},
-    {"label": "Incubo 1", "group": "Incubo"},
-    {"label": "Incubo 2", "group": "Incubo"},
-    # Los dos Juradores van juntos en la composición.
-    {"label": "Juradores 1", "group": "Juradores"},
-    {"label": "Juradores 2", "group": "Juradores"},
-    {"label": "Monarca", "group": "Monarca"},
-    {"label": "Romperreinos", "group": "Romperreinos"},
+    {"label": "Main Tank", "group": "Main Tank"},
+    {"label": "Offtank 1", "group": "Offtank"},
+    {"label": "Offtank 2", "group": "Offtank"},
     {"label": "Main Healer", "group": "Main Healer"},
-    {"label": "Healer sec", "group": "Healer sec"},
-    {"label": "Raiz Dps 1", "group": "Raiz Dps"},
-    {"label": "Raiz Dps 2", "group": "Raiz Dps"},
-    {"label": "Shadowcaller", "group": "Shadowcaller"},
-    # DPS: primero las 5 ballestas, penúltimo Lightcaller y último Flamígero.
-    {"label": "Dps 1", "group": "Ranged DPS"},
-    {"label": "Dps 2", "group": "Ranged DPS"},
-    {"label": "Dps 3", "group": "Ranged DPS"},
-    {"label": "Dps 4", "group": "Ranged DPS"},
-    {"label": "Dps 5", "group": "Ranged DPS"},
-    {"label": "Dps 6 · Lightcaller", "group": "Lightcaller"},
-    {"label": "Dps 7 · Flamígero", "group": "Fuego"},
+    {"label": "Healer Party 1 · 1", "group": "Healer Party 1"},
+    {"label": "Healer Party 1 · 2", "group": "Healer Party 1"},
+    {"label": "Healer Party 2 · 1", "group": "Healer Party 2"},
+    {"label": "Healer Party 2 · 2", "group": "Healer Party 2"},
+    {"label": "Invocador Oscuro", "group": "Invocador Oscuro"},
+    {"label": "Enigmático 1", "group": "Enigmático"},
+    {"label": "Enigmático 2", "group": "Enigmático"},
+    {"label": "DPS 1", "group": "DPS"},
+    {"label": "DPS 2", "group": "DPS"},
+    {"label": "DPS 3", "group": "DPS"},
+    {"label": "DPS 4", "group": "DPS"},
+    {"label": "DPS 5", "group": "DPS"},
+    {"label": "DPS 6", "group": "DPS"},
+    {"label": "DPS 7", "group": "DPS"},
+    {"label": "DPS 8", "group": "DPS"},
+    {"label": "DPS 9", "group": "DPS"},
 ]
 
 DRAGON_PING_IDS = [
@@ -47,26 +45,23 @@ DRAGON_PING_IDS = [
     1540712364452610178,
 ]
 
-# El orden importa: primero los alias más específicos.
+# El orden importa: los alias específicos se comprueban antes que los genéricos.
 ROLE_ALIASES = [
-    ("Healer sec", [
-        "healer sec", "healer secundario", "sec healer",
-        "healer 2", "healer2", "helaer 2", "helaer2",
-    ]),
-    ("Main Healer", ["main healer", "healer 1", "mh", "healer"]),
-    ("Raiz Dps", ["raiz dps", "raíz dps", "ir dps", "rdps"]),
-    ("Lightcaller", ["lightcaller", "light caller", "invocador de luz", "pajaro", "pájaro", "lc"]),
-    ("Fuego", ["flamigero", "flamígero", "flaming", "flami", "fuego", "fire"]),
-    ("Ranged DPS", ["wailling", "wailing", "ballesta", "repetidora"]),
-    ("Shadowcaller", ["shadowcaller", "shadow caller", "sc"]),
-    ("Romperreinos", ["romperreinos", "rompe"]),
-    ("Juradores", ["juradores", "jurador", "maracas"]),
-    ("Mangual", ["mangual"]),
-    ("Incubo", ["incubo", "íncubo"]),
-    ("Monarca", ["monarca"]),
+    ("Healer Party 1", ["healer party 1", "healer party1", "caido", "caído"]),
+    ("Healer Party 2", ["healer party 2", "healer party2", "redencion", "redención"]),
+    ("Main Healer", ["main healer", "mh", "baston sagrado", "bastón sagrado"]),
+    ("Invocador Oscuro", ["invocador oscuro", "shadow caller", "shadowcaller", "shadow", "sc"]),
+    ("Enigmático", ["enigmatico", "enigmático", "enigmatic"]),
+    ("Offtank", ["offtank", "off tank", "off", "ot", "maracas"]),
+    ("Main Tank", ["main tank", "maintank", "tank", "tanque"]),
+    ("DPS Ballesta", ["repetidora", "wailing", "wailling", "ballesta"]),
+    ("DPS Flami", ["flamigero", "flamígero", "flaming", "flami", "fuego", "fire"]),
+    ("DPS Pajaro", ["lightcaller", "light caller", "invocador de luz", "pajaro", "pájaro", "lc"]),
 ]
 
-DPS_GROUPS = {"Lightcaller", "Fuego", "Ranged DPS"}
+DPS_GROUPS = {"DPS"}
+HEALER_PARTY_GROUPS = {"Healer Party 1", "Healer Party 2"}
+
 
 
 def clean_message_text(text: str) -> str:
@@ -112,8 +107,13 @@ def normalize_role(text):
             if alias in text:
                 return role
 
-    # "x dps" se considera cualquier DPS libre.
-    if "dps" in text:
+    # `x hp` ocupa el primer hueco libre entre Healer Party 1 y 2.
+    words = text.replace("@", " ").split()
+    if "hp" in words:
+        return "HEALER_PARTY_ANY"
+
+    # `x dps` ocupa cualquier hueco DPS libre.
+    if "dps" in words:
         return "DPS_ANY"
 
     return None
@@ -157,9 +157,23 @@ def is_user_in_activity(activity, user_id):
 
 
 def role_matches(slot_group, requested_role):
-    if requested_role == "DPS_ANY":
-        return slot_group in DPS_GROUPS
+    if requested_role in {"DPS_ANY", "DPS Ballesta", "DPS Flami", "DPS Pajaro"}:
+        return slot_group == "DPS"
+    if requested_role == "HEALER_PARTY_ANY":
+        return slot_group in HEALER_PARTY_GROUPS
     return slot_group == requested_role
+
+
+def signup_display_name(requested_role, slot):
+    if requested_role == "DPS Ballesta":
+        return "DPS Ballesta"
+    if requested_role == "DPS Flami":
+        return "DPS Flami"
+    if requested_role == "DPS Pajaro":
+        return "DPS Pajaro"
+    if requested_role == "DPS_ANY":
+        return "DPS"
+    return slot["label"]
 
 
 def clear_fill_assignments(activity):
@@ -168,6 +182,7 @@ def clear_fill_assignments(activity):
         if slot["user"] and slot["user"].id in fill_ids:
             slot["user"] = None
             slot["filled_by_fill"] = False
+            slot["signup_role"] = None
 
 
 def rebuild_fill_assignments(activity):
@@ -185,6 +200,7 @@ def rebuild_fill_assignments(activity):
 
             slot["user"] = fill["user"]
             slot["filled_by_fill"] = True
+            slot["signup_role"] = slot["label"]
             fill["assigned_role"] = slot["label"]
             break
 
@@ -207,6 +223,7 @@ def add_user(activity, user, requested_role, message_content):
         if role_matches(slot["group"], requested_role) and slot["user"] is None:
             slot["user"] = user
             slot["filled_by_fill"] = False
+            slot["signup_role"] = signup_display_name(requested_role, slot)
             rebuild_fill_assignments(activity)
             return True, "role_added"
 
@@ -219,6 +236,7 @@ def add_user(activity, user, requested_role, message_content):
         ):
             slot["user"] = user
             slot["filled_by_fill"] = False
+            slot["signup_role"] = signup_display_name(requested_role, slot)
             rebuild_fill_assignments(activity)
             return True, "role_added_replacing_fill"
 
@@ -232,6 +250,7 @@ def remove_user(activity, user):
         if slot["user"] and slot["user"].id == user.id:
             slot["user"] = None
             slot["filled_by_fill"] = False
+            slot["signup_role"] = None
             removed = True
 
     for fill in list(activity["fill_queue"]):
@@ -274,8 +293,8 @@ def build_dragon_embed(activity):
             "> 🗡️ **Armas:** `T6.4`\n"
             "> 🛡️ **Armadura:** `T6.3 mínimo`\n"
             "> 💚 **Healers:** `T6.4`\n\n"
-            "📌 **Revisa la imagen de builds y swaps del hilo antes de salir.**\n"
-            "✨ Ven con el set preparado, comida, pociones y swaps listos."
+            "🧰 **Build, comida, pociones y swaps listos antes de salir.**\n"
+            "📸 Revisa la composición oficial fijada en el hilo."
         ),
         inline=False,
     )
@@ -287,7 +306,8 @@ def build_dragon_embed(activity):
             value = f"{slot['user'].mention}{suffix}"
         else:
             value = "`Libre`"
-        party_lines.append(f"**{index}. {slot['label']}** — {value}")
+        display_label = slot.get("signup_role") or slot["label"]
+        party_lines.append(f"**{index}. {display_label}** — {value}")
 
     # 20 líneas siguen estando dentro del límite del campo.
     embed.add_field(
@@ -320,23 +340,32 @@ def build_dragon_embed(activity):
 
 def build_help_embed():
     return info_embed(
-        "Cómo apuntarse a Dragones",
+        "🐉 Cómo apuntarse a Dragones",
         (
-            "Escribe **siempre `x` delante**. También puedes apuntar a otra persona "
-            "mencionándola.\n\n"
-            "🛡️ `x mangual`, `x incubo`, `x maracas`, `x monarca`, `x rompe`\n"
-            "💚 `x mh`, `x healer`, `x healer 2`\n"
-            "🌿 `x rdps`, `x ir dps`\n"
-            "🌑 `x sc`\n"
-            "✨ `x lc`, `x pajaro`, `x lightcaller`\n"
-            "🔥 `x fuego`, `x fire`, `x flami`\n"
-            "🏹 `x ballesta`, `x repetidora`, `x wailing`\n"
-            "⚔️ `x dps` → primer DPS libre\n\n"
-            "👥 Ejemplo para otro usuario: `x mangual @usuario`\n"
-            "🟨 Fill: `x fill` / `x fill menos healer` / `x fill menos dps @usuario`\n"
+            "Escribe **siempre `x` delante** del rol. También puedes apuntar a otra persona "
+            "añadiendo su mención al final.\n\n"
+            "🛡️ **Frontline**\n"
+            "`x main tank`\n"
+            "`x offtank` · `x ot` · `x off` · `x maracas`\n\n"
+            "💚 **Healers**\n"
+            "`x main healer` · `x mh` · `x baston sagrado`\n"
+            "`x healer party 1` · `x caido`\n"
+            "`x healer party 2` · `x redencion`\n"
+            "`x hp` → primer hueco libre de Healer Party\n\n"
+            "🌑 **Support**\n"
+            "`x invocador oscuro` · `x sc` · `x shadow`\n"
+            "`x enigmatico` · `x enigmatic`\n\n"
+            "⚔️ **DPS**\n"
+            "`x dps` → cualquier hueco DPS libre\n"
+            "`x ballesta` · `x repetidora` · `x wailing` → **DPS Ballesta**\n"
+            "`x fuego` · `x fire` · `x flami` → **DPS Flami**\n"
+            "`x lc` · `x lightcaller` · `x pajaro` → **DPS Pajaro**\n\n"
+            "👥 Para apuntar a otro: `x dps @usuario`\n"
+            "🟨 Fill: `x fill` / `x fill menos dps`\n"
             "🚪 Salir: `signoff` / `signoff @usuario`"
         ),
     )
+
 
 
 class Dragons(commands.Cog):
@@ -406,6 +435,7 @@ class Dragons(commands.Cog):
                     "group": slot["group"],
                     "user": None,
                     "filled_by_fill": False,
+                    "signup_role": None,
                 }
                 for slot in DRAGON_SLOTS
             ],
@@ -425,13 +455,26 @@ class Dragons(commands.Cog):
                 })
                 continue
 
-            # Compatibilidad con Dragones guardados antes de renombrar
-            # "Juradores" a "Juradores 1".
-            restored_role = "Juradores 1" if role == "Juradores" else role
+            # Restauración de la composición actual. Los registros de la composición
+            # antigua se ignoran si no corresponden a un hueco actual.
+            requested_role = role
+            if role in {"DPS Ballesta", "DPS Flami", "DPS Pajaro", "DPS"}:
+                requested_role = role if role != "DPS" else "DPS_ANY"
+            elif role.startswith("DPS "):
+                requested_role = "DPS_ANY"
+            elif role.startswith("Offtank"):
+                requested_role = "Offtank"
+            elif role.startswith("Healer Party 1"):
+                requested_role = "Healer Party 1"
+            elif role.startswith("Healer Party 2"):
+                requested_role = "Healer Party 2"
+            elif role.startswith("Enigmático"):
+                requested_role = "Enigmático"
 
             for slot in activity["slots"]:
-                if slot["label"] == restored_role and slot["user"] is None:
+                if slot["user"] is None and role_matches(slot["group"], requested_role):
                     slot["user"] = member
+                    slot["signup_role"] = signup_display_name(requested_role, slot)
                     break
 
         rebuild_fill_assignments(activity)
@@ -507,6 +550,7 @@ class Dragons(commands.Cog):
                     "group": slot["group"],
                     "user": None,
                     "filled_by_fill": False,
+                    "signup_role": None,
                 }
                 for slot in DRAGON_SLOTS
             ],
@@ -627,7 +671,7 @@ class Dragons(commands.Cog):
                 avoid_roles = ",".join(sorted(parse_fill_avoid(message.content)))
             else:
                 assigned = get_user_slot(activity, target.id)
-                stored_role = assigned["label"] if assigned else role
+                stored_role = (assigned.get("signup_role") or assigned["label"]) if assigned else role
 
             database.add_scheduled_dragon_participant(
                 data["message_id"],
