@@ -269,13 +269,13 @@ def build_dragon_embed(activity):
     )
 
     embed.add_field(
-        name="📜 Equipamiento",
+        name="⚔️ REQUISITOS DE EQUIPO",
         value=(
-            "**Compo Avas T6.4** en armas.\n"
-            "**T6.3 mínimo** para la armadura.\n"
-            "**T6.4 los healers**, por favor.\n\n"
-            "Si movéis tablas a Fort, se puede craftear un exaltado "
-            "y dejarlo preparado para el grupo."
+            "> 🗡️ **Armas:** `T6.4`\n"
+            "> 🛡️ **Armadura:** `T6.3 mínimo`\n"
+            "> 💚 **Healers:** `T6.4`\n\n"
+            "📌 **Revisa la imagen de builds y swaps del hilo antes de salir.**\n"
+            "✨ Ven con el set preparado, comida, pociones y swaps listos."
         ),
         inline=False,
     )
@@ -541,8 +541,15 @@ class Dragons(commands.Cog):
 
         if image_path.exists():
             compo_embed = info_embed(
-                "Composición y builds de Dragones",
-                "Aquí tenéis la tabla de builds, swaps y composición para esta salida.",
+                "🐉 DRAGONES · BUILDS & SWAPS",
+                (
+                    "⚔️ **Esta es la composición oficial para la salida.**\n\n"
+                    "🔹 Revisa tu **build** antes de apuntarte.\n"
+                    "🔁 Lleva preparados los **swaps** indicados.\n"
+                    "🍲 Comprueba **comida y pociones** antes de salir.\n"
+                    "💚 Los **healers** deben ir en `T6.4`.\n\n"
+                    "🔥 **Entramos preparados. Sin improvisar dentro.**"
+                ),
             )
             compo_embed.set_image(url="attachment://dragon_compo.png")
 
