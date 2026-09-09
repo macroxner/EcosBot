@@ -65,3 +65,10 @@ El calendario automático de Dragones se publica en `CALENDAR_CHANNEL` y el cont
 - Nuevos alias de inscripción para Dragones, manteniendo `x` obligatorio.
 - DPS especializados se muestran como DPS Ballesta, DPS Flami o DPS Pajaro; `x dps` ocupa cualquier DPS libre.
 - EcoShop: mute pasa a 2 minutos; roles temporales y cambio de nick pasan a 30 minutos, sin modificar precios.
+
+
+## v9
+- EcoShop y `?buymute`: el mute ahora es un **server mute real de voz** durante 2 minutos; ya no usa Discord Timeout/aislamiento.
+- El objetivo debe estar conectado a voz. Si el bot no puede mutearlo, no se cobran Ecoins.
+- Dragones: los cuatro huecos de healer party se muestran como `Caído (Healer Party 1)` x2 y `Redención (Healer Party 2)` x2.
+- `fallen` añadido como alias para apuntarse a Caído / Healer Party 1.

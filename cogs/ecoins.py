@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from datetime import timedelta
+import asyncio
 
 import database
 import utils.Verificator as Verificator
@@ -46,14 +46,56 @@ class Ecoins(commands.Cog):
             await ctx.send(embed=error_embed(f"Necesitas **{cost} Ecoins** y tienes **{ecoins}**."))
             return
 
+        if member.voice is None or member.voice.channel is None:
+            await ctx.send(embed=error_embed(
+                "Ese usuario debe estar conectado a un canal de voz para poder mutearlo."
+            ))
+            return
+
+        if member.voice.mute:
+            await ctx.send(embed=error_embed(
+                "Ese usuario ya está muteado por el servidor."
+            ))
+            return
+
+        try:
+            # Server mute real de voz. No usamos timeout porque eso aísla al usuario.
+            await member.edit(
+                mute=True,
+                reason=f"Mute de voz comprado por {ctx.author}"
+            )
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                "No puedo mutear a ese usuario. Comprueba que EcosBot tenga **Silenciar miembros** "
+                "y que su rol esté por encima del rol del objetivo."
+            ))
+            return
+        except discord.HTTPException as exc:
+            await ctx.send(embed=error_embed(
+                f"Discord no ha permitido aplicar el mute: `{exc}`"
+            ))
+            return
+
+        # Solo cobramos cuando el mute se ha aplicado correctamente.
         database.add_ecoins(ctx.author.id, -cost, reason=f"Mute comprado sobre {member}")
-        await member.timeout(
-            discord.utils.utcnow() + timedelta(minutes=2),
-            reason=f"Mute comprado por {ctx.author}"
-        )
+
+        async def unmute_later():
+            await asyncio.sleep(120)
+            try:
+                if member.voice is not None and member.voice.mute:
+                    await member.edit(
+                        mute=False,
+                        reason="Fin del mute temporal comprado con Ecoins"
+                    )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        asyncio.create_task(unmute_later())
+
         await ctx.send(embed=success_embed(
             "Mute comprado",
-            f"🔇 {ctx.author.mention} ha gastado **{cost} Ecoins** para mutear a {member.mention} durante **2 minutos**."
+            f"🔇 {ctx.author.mention} ha gastado **{cost} Ecoins** para mutear la voz de "
+            f"{member.mention} durante **2 minutos**."
         ))
 
 

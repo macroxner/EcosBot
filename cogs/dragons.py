@@ -21,10 +21,10 @@ DRAGON_SLOTS = [
     {"label": "Offtank 1", "group": "Offtank"},
     {"label": "Offtank 2", "group": "Offtank"},
     {"label": "Main Healer", "group": "Main Healer"},
-    {"label": "Healer Party 1 · 1", "group": "Healer Party 1"},
-    {"label": "Healer Party 1 · 2", "group": "Healer Party 1"},
-    {"label": "Healer Party 2 · 1", "group": "Healer Party 2"},
-    {"label": "Healer Party 2 · 2", "group": "Healer Party 2"},
+    {"label": "Caído (Healer Party 1)", "group": "Healer Party 1"},
+    {"label": "Caído (Healer Party 1)", "group": "Healer Party 1"},
+    {"label": "Redención (Healer Party 2)", "group": "Healer Party 2"},
+    {"label": "Redención (Healer Party 2)", "group": "Healer Party 2"},
     {"label": "Invocador Oscuro", "group": "Invocador Oscuro"},
     {"label": "Enigmático 1", "group": "Enigmático"},
     {"label": "Enigmático 2", "group": "Enigmático"},
@@ -47,7 +47,7 @@ DRAGON_PING_IDS = [
 
 # El orden importa: los alias específicos se comprueban antes que los genéricos.
 ROLE_ALIASES = [
-    ("Healer Party 1", ["healer party 1", "healer party1", "caido", "caído"]),
+    ("Healer Party 1", ["healer party 1", "healer party1", "caido", "caído", "fallen"]),
     ("Healer Party 2", ["healer party 2", "healer party2", "redencion", "redención"]),
     ("Main Healer", ["main healer", "mh", "baston sagrado", "bastón sagrado"]),
     ("Invocador Oscuro", ["invocador oscuro", "shadow caller", "shadowcaller", "shadow", "sc"]),
@@ -349,7 +349,7 @@ def build_help_embed():
             "`x offtank` · `x ot` · `x off` · `x maracas`\n\n"
             "💚 **Healers**\n"
             "`x main healer` · `x mh` · `x baston sagrado`\n"
-            "`x healer party 1` · `x caido`\n"
+            "`x healer party 1` · `x caido` · `x fallen`\n"
             "`x healer party 2` · `x redencion`\n"
             "`x hp` → primer hueco libre de Healer Party\n\n"
             "🌑 **Support**\n"

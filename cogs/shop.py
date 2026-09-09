@@ -13,7 +13,7 @@ SHOP_ITEMS = {
     "mute": {
         "name": "🔇 Mute 2 minutos",
         "cost": 50,
-        "description": "Mutea a alguien durante 2 minutos.",
+        "description": "Mutea la voz de alguien durante 2 minutos (sin aislarlo).",
         "needs_target": True,
         "type": "target"
     },
@@ -79,6 +79,36 @@ async def give_temp_role(guild, member, role_name, minutes=30):
 
     if role in member.roles:
         await member.remove_roles(role)
+
+
+
+
+async def voice_mute_temporarily(member, buyer, minutes=2):
+    """Mute real de voz (server mute), no timeout/aislamiento."""
+    if member.voice is None or member.voice.channel is None:
+        raise ValueError("El usuario debe estar conectado a un canal de voz para poder mutearlo.")
+
+    if member.voice.mute:
+        raise ValueError("Ese usuario ya está muteado por el servidor.")
+
+    await member.edit(
+        mute=True,
+        reason=f"Mute de voz comprado por {buyer}"
+    )
+
+    async def unmute_later():
+        await asyncio.sleep(minutes * 60)
+        try:
+            # El server-mute solo tiene sentido mientras existe estado de voz.
+            if member.voice is not None and member.voice.mute:
+                await member.edit(
+                    mute=False,
+                    reason="Fin del mute temporal comprado en EcoShop"
+                )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    asyncio.create_task(unmute_later())
 
 
 async def change_temp_nickname(member, new_nick, minutes=30):
@@ -194,16 +224,50 @@ class TargetSelect(discord.ui.UserSelect):
             )
             return
 
-        database.add_ecoins(self.buyer.id, -cost, f"Compra tienda: {item['name']}")
-        database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
+        # El mute es un server-mute REAL de voz. No usamos timeout, que aísla al usuario.
+        # Se aplica antes de cobrar para que nadie pierda Ecoins si Discord rechaza el mute.
+        if self.item_key == "mute":
+            try:
+                await voice_mute_temporarily(member, self.buyer, 2)
+            except ValueError as exc:
+                await interaction.response.send_message(
+                    embed=error_embed(str(exc)),
+                    ephemeral=True
+                )
+                return
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    embed=error_embed(
+                        "No puedo mutear a ese usuario. Comprueba que EcosBot tenga **Silenciar miembros** "
+                        "y que su rol esté por encima del rol del objetivo."
+                    ),
+                    ephemeral=True
+                )
+                return
+            except discord.HTTPException as exc:
+                await interaction.response.send_message(
+                    embed=error_embed(f"Discord no ha permitido aplicar el mute: `{exc}`"),
+                    ephemeral=True
+                )
+                return
 
-        msg = await apply_shop_effect(
-            interaction,
-            self.bot,
-            self.buyer,
-            member,
-            self.item_key
-        )
+            database.add_ecoins(self.buyer.id, -cost, f"Compra tienda: {item['name']}")
+            database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
+            msg = (
+                f"🔇 {self.buyer.mention} ha comprado un **mute de voz de 2 minutos** "
+                f"para {member.mention}."
+            )
+        else:
+            database.add_ecoins(self.buyer.id, -cost, f"Compra tienda: {item['name']}")
+            database.add_shop_purchase(self.buyer.id, member.id, self.item_key, cost)
+
+            msg = await apply_shop_effect(
+                interaction,
+                self.bot,
+                self.buyer,
+                member,
+                self.item_key
+            )
 
         await interaction.response.send_message(
             embed=success_embed("Compra aplicada", msg)
@@ -292,12 +356,8 @@ async def apply_shop_effect(interaction, bot, buyer, member, item_key):
     guild = interaction.guild
 
     if item_key == "mute":
-        await member.timeout(
-            discord.utils.utcnow() + timedelta(minutes=2),
-            reason=f"Mute comprado por {buyer}"
-        )
-
-        return f"🔇 {buyer.mention} ha comprado un **mute de 2 minutos** para {member.mention}."
+        await voice_mute_temporarily(member, buyer, 2)
+        return f"🔇 {buyer.mention} ha comprado un **mute de voz de 2 minutos** para {member.mention}."
 
     if item_key == "skill":
         asyncio.create_task(give_temp_role(guild, member, "Skill Issue", 30))
