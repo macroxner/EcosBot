@@ -39,6 +39,7 @@ async def setup_hook():
     await bot.load_extension("cogs.stats")
     await bot.load_extension("cogs.history")
     await bot.load_extension("cogs.shop")
+    await bot.load_extension("cogs.community")
     await bot.load_extension("cogs.dashboard")
     await bot.load_extension("cogs.achievements")
     await bot.load_extension("cogs.albion")

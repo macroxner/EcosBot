@@ -72,3 +72,12 @@ El calendario automático de Dragones se publica en `CALENDAR_CHANNEL` y el cont
 - El objetivo debe estar conectado a voz. Si el bot no puede mutearlo, no se cobran Ecoins.
 - Dragones: los cuatro huecos de healer party se muestran como `Caído (Healer Party 1)` x2 y `Redención (Healer Party 2)` x2.
 - `fallen` añadido como alias para apuntarse a Caído / Healer Party 1.
+
+## v10 - Comunidad y personalización
+- EcoShop: Frase célebre, Mascotas, Badges y Marcos de perfil marcados como ✦ NUEVO.
+- Las frases se guardan permanentemente en SQLite (`community_quotes`). `?quotes` muestra las últimas y `?quote` una al azar.
+- Mascotas: Rana, Gato, Perro, Fantasma, Dragón y Ajolote. El comprador les pone nombre y aparecen en `?profile`.
+- Badges: OG, Caos, Social, Coleccionista, Meme y Corazón. Son permanentes y equipables.
+- Marcos: Real, Infernal, Abisal, Naturaleza, Vacío y Dorado. Son permanentes y cambian el aspecto del embed de `?profile`.
+- `?cosmetics` / `?cosmeticos` muestra la colección actual.
+- Al seleccionar una novedad en `?shop`, primero aparece una explicación y un botón Continuar antes de cobrar.

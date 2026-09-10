@@ -247,6 +247,46 @@ def create_tables():
     )
     """)
 
+    # EcoShop: coleccionables y frases de la comunidad.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS community_quotes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_id INTEGER NOT NULL,
+        author_text TEXT NOT NULL,
+        quote_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_pets (
+        user_id INTEGER PRIMARY KEY,
+        pet_key TEXT NOT NULL,
+        pet_name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_badges (
+        user_id INTEGER NOT NULL,
+        badge_key TEXT NOT NULL,
+        equipped INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, badge_key)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_profile_frames (
+        user_id INTEGER NOT NULL,
+        frame_key TEXT NOT NULL,
+        equipped INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, frame_key)
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1570,3 +1610,135 @@ def adjust_attendance(activity_type, user_id, amount):
     conn.commit()
     conn.close()
     return changed
+
+
+# =========================
+# COMUNIDAD / PERSONALIZACION
+# =========================
+
+def add_community_quote(buyer_id, author_text, quote_text):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO community_quotes (buyer_id, author_text, quote_text) VALUES (?, ?, ?)",
+        (buyer_id, author_text, quote_text)
+    )
+    quote_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return quote_id
+
+def get_community_quotes(limit=20):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, buyer_id, author_text, quote_text, created_at FROM community_quotes ORDER BY id DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_random_community_quote():
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, buyer_id, author_text, quote_text, created_at FROM community_quotes ORDER BY RANDOM() LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def set_user_pet(user_id, pet_key, pet_name):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO user_pets (user_id, pet_key, pet_name) VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET pet_key=excluded.pet_key, pet_name=excluded.pet_name, created_at=CURRENT_TIMESTAMP
+    """, (user_id, pet_key, pet_name))
+    conn.commit()
+    conn.close()
+
+def get_user_pet(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT pet_key, pet_name FROM user_pets WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def add_user_badge(user_id, badge_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO user_badges (user_id, badge_key, equipped) VALUES (?, ?, 0)", (user_id, badge_key))
+    conn.commit()
+    conn.close()
+
+def has_user_badge(user_id, badge_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM user_badges WHERE user_id=? AND badge_key=?", (user_id, badge_key))
+    ok = cursor.fetchone() is not None
+    conn.close()
+    return ok
+
+def equip_user_badge(user_id, badge_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE user_badges SET equipped=0 WHERE user_id=?", (user_id,))
+    cursor.execute("UPDATE user_badges SET equipped=1 WHERE user_id=? AND badge_key=?", (user_id, badge_key))
+    conn.commit()
+    conn.close()
+
+def get_equipped_badge(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT badge_key FROM user_badges WHERE user_id=? AND equipped=1 LIMIT 1", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def get_user_badges(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT badge_key, equipped FROM user_badges WHERE user_id=? ORDER BY created_at", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def add_user_frame(user_id, frame_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO user_profile_frames (user_id, frame_key, equipped) VALUES (?, ?, 0)", (user_id, frame_key))
+    conn.commit()
+    conn.close()
+
+def has_user_frame(user_id, frame_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM user_profile_frames WHERE user_id=? AND frame_key=?", (user_id, frame_key))
+    ok = cursor.fetchone() is not None
+    conn.close()
+    return ok
+
+def equip_user_frame(user_id, frame_key):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE user_profile_frames SET equipped=0 WHERE user_id=?", (user_id,))
+    cursor.execute("UPDATE user_profile_frames SET equipped=1 WHERE user_id=? AND frame_key=?", (user_id, frame_key))
+    conn.commit()
+    conn.close()
+
+def get_equipped_frame(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT frame_key FROM user_profile_frames WHERE user_id=? AND equipped=1 LIMIT 1", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def get_user_frames(user_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT frame_key, equipped FROM user_profile_frames WHERE user_id=? ORDER BY created_at", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
