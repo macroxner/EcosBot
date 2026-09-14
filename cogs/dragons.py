@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 
 import database
 import config
+import utils.Verificator as Verificator
 from utils.embeds import error_embed, info_embed, success_embed, warning_embed
 from utils.logger import send_log
 
@@ -626,6 +627,162 @@ class Dragons(commands.Cog):
             ),
             discord.Color.red(),
         )
+
+    def _can_manage_dragon(self, ctx, activity):
+        return (
+            ctx.author.id == activity["creator"].id
+            or Verificator.usuario_puede_ejecutar_comando(ctx)
+        )
+
+    @commands.command(name="editdragon", aliases=["editardragon", "editdragones"])
+    async def edit_dragon(self, ctx, campo: str = None, *, valor: str = None):
+        """Edita un Dragón desde su propio hilo."""
+        if ctx.channel.id not in dragon_messages:
+            restored = await self.restore_by_thread(ctx.channel.id)
+            if not restored:
+                await ctx.send(embed=error_embed(
+                    "Usa este comando dentro del hilo de un Dragón activo.",
+                    "Dragón no encontrado",
+                ))
+                return
+
+        data = dragon_messages[ctx.channel.id]
+        activity = data["activity"]
+
+        if not self._can_manage_dragon(ctx, activity):
+            await ctx.send(embed=error_embed(
+                "Solo el creador o un rol autorizado puede editar este Dragón.",
+                "Sin permisos",
+            ))
+            return
+
+        if not campo or valor is None:
+            await ctx.send(embed=info_embed(
+                "Editar Dragón",
+                (
+                    "Usa uno de estos formatos:\n"
+                    "`?editdragon fecha 15/09/2026`\n"
+                    "`?editdragon inicio 20:30`\n"
+                    "`?editdragon fin 22:30`"
+                ),
+            ))
+            return
+
+        campo = campo.lower().strip()
+        valor = valor.strip()
+        aliases = {
+            "fecha": "fecha",
+            "date": "fecha",
+            "inicio": "hora_inicio",
+            "hora_inicio": "hora_inicio",
+            "start": "hora_inicio",
+            "fin": "hora_fin",
+            "hora_fin": "hora_fin",
+            "end": "hora_fin",
+        }
+        key = aliases.get(campo)
+
+        if key is None:
+            await ctx.send(embed=error_embed(
+                "Campos válidos: `fecha`, `inicio`, `fin`.",
+                "Campo no válido",
+            ))
+            return
+
+        try:
+            if key == "fecha":
+                datetime.strptime(valor, "%d/%m/%Y")
+                madrid_to_utc(valor, activity["hora_inicio"])
+                madrid_to_utc(valor, activity["hora_fin"])
+            else:
+                datetime.strptime(valor, "%H:%M")
+                madrid_to_utc(activity["fecha"], valor)
+        except ValueError:
+            await ctx.send(embed=error_embed(
+                "Fecha: `DD/MM/AAAA` · Hora: `HH:MM`.",
+                "Formato no válido",
+            ))
+            return
+
+        activity[key] = valor
+        database.update_scheduled_dragon(
+            data["message_id"],
+            activity["fecha"],
+            activity["hora_inicio"],
+            activity["hora_fin"],
+        )
+
+        await data["message"].edit(
+            content=None,
+            embed=build_dragon_embed(activity),
+        )
+
+        try:
+            await ctx.channel.edit(
+                name=f"Dragones {activity['fecha']} {activity['hora_inicio']}"
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        await self.update_auto_calendar_message()
+
+        await ctx.send(embed=success_embed(
+            "Dragón actualizado",
+            (
+                f"✏️ **{campo.title()}** → `{valor}`\n"
+                "El mensaje principal y la base de datos ya están actualizados."
+            ),
+        ))
+
+    @commands.command(name="deletedragon", aliases=["eliminardragon", "borrardragon"])
+    async def delete_dragon(self, ctx):
+        """Elimina el Dragón activo desde su hilo."""
+        if ctx.channel.id not in dragon_messages:
+            restored = await self.restore_by_thread(ctx.channel.id)
+            if not restored:
+                await ctx.send(embed=error_embed(
+                    "Usa este comando dentro del hilo de un Dragón activo.",
+                    "Dragón no encontrado",
+                ))
+                return
+
+        data = dragon_messages[ctx.channel.id]
+        activity = data["activity"]
+
+        if not self._can_manage_dragon(ctx, activity):
+            await ctx.send(embed=error_embed(
+                "Solo el creador o un rol autorizado puede eliminar este Dragón.",
+                "Sin permisos",
+            ))
+            return
+
+        parent_channel = data["message"].channel
+        summary = (
+            f"🐉 **Dragones** · {activity['fecha']} · "
+            f"{activity['hora_inicio']}-{activity['hora_fin']}"
+        )
+
+        database.delete_scheduled_dragon(data["message_id"])
+        dragon_messages.pop(ctx.channel.id, None)
+        await self.update_auto_calendar_message()
+
+        try:
+            await data["message"].delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            await parent_channel.send(embed=success_embed(
+                "Dragón eliminado",
+                f"🗑️ {summary}\nEliminado por {ctx.author.mention}.",
+            ))
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            await ctx.channel.delete(reason=f"Dragón eliminado por {ctx.author}")
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
 
     @commands.Cog.listener()
     async def on_message(self, message):

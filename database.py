@@ -731,6 +731,34 @@ def add_scheduled_ava(message_id, thread_id, channel_id, creator_id, tier, date,
     conn.close()
 
 
+
+def update_scheduled_ava(message_id, tier, date, start_time, end_time, maseo):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE scheduled_avas
+    SET tier = ?, date = ?, start_time = ?, end_time = ?, maseo = ?,
+        reminder_sent = 0, fame_processed = 0
+    WHERE message_id = ?
+    """, (tier, date, start_time, end_time, maseo, message_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_scheduled_ava(message_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM scheduled_ava_participants WHERE ava_message_id = ?",
+        (message_id,),
+    )
+    cursor.execute(
+        "DELETE FROM scheduled_avas WHERE message_id = ?",
+        (message_id,),
+    )
+    conn.commit()
+    conn.close()
+
 def get_pending_ava_reminders():
     conn = connect()
     cursor = conn.cursor()
@@ -1277,6 +1305,34 @@ def add_scheduled_dragon(message_id, thread_id, channel_id, creator_id, date, st
     conn.commit()
     conn.close()
 
+
+
+def update_scheduled_dragon(message_id, date, start_time, end_time):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE scheduled_dragons
+    SET date = ?, start_time = ?, end_time = ?,
+        reminder_sent = 0, stats_processed = 0
+    WHERE message_id = ?
+    """, (date, start_time, end_time, message_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_scheduled_dragon(message_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM scheduled_dragon_participants WHERE dragon_message_id = ?",
+        (message_id,),
+    )
+    cursor.execute(
+        "DELETE FROM scheduled_dragons WHERE message_id = ?",
+        (message_id,),
+    )
+    conn.commit()
+    conn.close()
 
 def add_scheduled_dragon_participant(dragon_message_id, user_id, role, avoid_roles=""):
     conn = connect()

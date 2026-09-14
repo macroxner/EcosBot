@@ -81,3 +81,13 @@ El calendario automático de Dragones se publica en `CALENDAR_CHANNEL` y el cont
 - Marcos: Real, Infernal, Abisal, Naturaleza, Vacío y Dorado. Son permanentes y cambian el aspecto del embed de `?profile`.
 - `?cosmetics` / `?cosmeticos` muestra la colección actual.
 - Al seleccionar una novedad en `?shop`, primero aparece una explicación y un botón Continuar antes de cobrar.
+
+
+## v11 - Edición y eliminación de actividades
+
+- Avalonianas: `?editava` permite editar fecha, inicio, fin, tier y maseo desde el hilo.
+- Avalonianas: `?deleteava` elimina actividad, mensaje, hilo y registros programados.
+- Dragones: `?editdragon` permite editar fecha, inicio y fin desde el hilo.
+- Dragones: `?deletedragon` elimina actividad, mensaje, hilo y registros programados.
+- Los calendarios automáticos se actualizan inmediatamente tras editar/eliminar.
+- Las Avalonianas muestran horario España y UTC en el mensaje principal, calendarios y recordatorios.

@@ -6,7 +6,7 @@ import database
 import config
 import utils.Verificator as Verificator
 from utils.logger import send_log
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from utils.embeds import (
@@ -225,6 +225,18 @@ def format_fill_queue(activity):
     return lines
 
 
+MADRID_TZ = ZoneInfo("Europe/Madrid")
+
+
+def madrid_to_utc(date_text, time_text):
+    local_dt = datetime.strptime(
+        f"{date_text} {time_text}",
+        "%d/%m/%Y %H:%M"
+    ).replace(tzinfo=MADRID_TZ)
+
+    return local_dt.astimezone(timezone.utc).strftime("%H:%M")
+
+
 def render_activity_message(activity):
     creator = activity["creator"]
 
@@ -232,6 +244,8 @@ def render_activity_message(activity):
         title=f"⚔️ Avaloniana {activity['tier']} · {activity['fecha']}",
         description=(
             f"🕒 **{activity['hora_inicio']} - {activity['hora_fin']} España**\n"
+            f"🌍 **{madrid_to_utc(activity['fecha'], activity['hora_inicio'])} - "
+            f"{madrid_to_utc(activity['fecha'], activity['hora_fin'])} UTC**\n"
             f"👤 **Caller:** {creator.mention}\n"
             f"📍 **Maseo:** {activity['maseo']}"
         ),
@@ -326,7 +340,8 @@ class CalendarView(discord.ui.View):
             embed.add_field(
                 name=f"⚔️ {tier} | {date}",
                 value=(
-                    f"🕒 **{start_time} - {end_time}**\n"
+                    f"🕒 **{start_time} - {end_time} España**\n"
+                    f"🌍 **{madrid_to_utc(date, start_time)} - {madrid_to_utc(date, end_time)} UTC**\n"
                     f"👤 Caller: **{caller_name}**\n"
                     f"📍 Maseo: **{maseo}**\n"
                     f"🧵 <#{thread_id}>"
@@ -632,6 +647,19 @@ class Activities(commands.Cog):
     async def ava(self, ctx, tier: str, fecha: str, hora_inicio: str, hora_fin: str, *, maseo: str):
         creator = ctx.author
 
+        try:
+            datetime.strptime(fecha, "%d/%m/%Y")
+            datetime.strptime(hora_inicio, "%H:%M")
+            datetime.strptime(hora_fin, "%H:%M")
+            madrid_to_utc(fecha, hora_inicio)
+            madrid_to_utc(fecha, hora_fin)
+        except ValueError:
+            await ctx.send(embed=error_embed(
+                "Formato esperado:\n`?ava T8 15/09/2026 20:00 22:00 Fort Sterling`",
+                "Fecha u hora no válida",
+            ))
+            return
+
         slots = []
 
         for role in ROLES_ORDER:
@@ -711,10 +739,182 @@ class Activities(commands.Cog):
             f"Caller: {creator.mention}\n"
             f"Tier: {tier}\n"
             f"Fecha: {fecha}\n"
-            f"Hora: {hora_inicio} - {hora_fin}\n"
+            f"Hora: {hora_inicio} - {hora_fin} España\n"
+            f"UTC: {madrid_to_utc(fecha, hora_inicio)} - {madrid_to_utc(fecha, hora_fin)}\n"
             f"Maseo: {maseo}",
             discord.Color.blue()
         )
+
+    def _can_manage_activity(self, ctx, activity):
+        return (
+            ctx.author.id == activity["creator"].id
+            or Verificator.usuario_puede_ejecutar_comando(ctx)
+        )
+
+    @commands.command(name="editava", aliases=["editarava"])
+    async def edit_ava(self, ctx, campo: str = None, *, valor: str = None):
+        """Edita una Avaloniana desde su propio hilo.
+
+        Ejemplos:
+        ?editava fecha 15/09/2026
+        ?editava inicio 20:30
+        ?editava fin 22:30
+        ?editava tier T8
+        ?editava maseo Fort Sterling
+        """
+        if ctx.channel.id not in activity_messages:
+            restored = await self.restore_activity_by_thread(ctx.channel.id)
+            if not restored:
+                await ctx.send(embed=error_embed(
+                    "Usa este comando dentro del hilo de una Avaloniana activa.",
+                    "Avaloniana no encontrada",
+                ))
+                return
+
+        data = activity_messages[ctx.channel.id]
+        activity = data["activity"]
+
+        if not self._can_manage_activity(ctx, activity):
+            await ctx.send(embed=error_embed(
+                "Solo el caller o un rol autorizado puede editar esta Avaloniana.",
+                "Sin permisos",
+            ))
+            return
+
+        if not campo or valor is None:
+            await ctx.send(embed=info_embed(
+                "Editar Avaloniana",
+                (
+                    "Usa uno de estos formatos:\n"
+                    "`?editava fecha 15/09/2026`\n"
+                    "`?editava inicio 20:30`\n"
+                    "`?editava fin 22:30`\n"
+                    "`?editava tier T8`\n"
+                    "`?editava maseo Fort Sterling`"
+                ),
+            ))
+            return
+
+        campo = campo.lower().strip()
+        valor = valor.strip()
+        aliases = {
+            "fecha": "fecha",
+            "date": "fecha",
+            "inicio": "hora_inicio",
+            "hora_inicio": "hora_inicio",
+            "start": "hora_inicio",
+            "fin": "hora_fin",
+            "hora_fin": "hora_fin",
+            "end": "hora_fin",
+            "tier": "tier",
+            "maseo": "maseo",
+        }
+        key = aliases.get(campo)
+
+        if key is None:
+            await ctx.send(embed=error_embed(
+                "Campos válidos: `fecha`, `inicio`, `fin`, `tier`, `maseo`.",
+                "Campo no válido",
+            ))
+            return
+
+        try:
+            if key == "fecha":
+                datetime.strptime(valor, "%d/%m/%Y")
+                madrid_to_utc(valor, activity["hora_inicio"])
+                madrid_to_utc(valor, activity["hora_fin"])
+            elif key in {"hora_inicio", "hora_fin"}:
+                datetime.strptime(valor, "%H:%M")
+                madrid_to_utc(activity["fecha"], valor)
+        except ValueError:
+            await ctx.send(embed=error_embed(
+                "Fecha: `DD/MM/AAAA` · Hora: `HH:MM`.",
+                "Formato no válido",
+            ))
+            return
+
+        activity[key] = valor
+
+        database.update_scheduled_ava(
+            data["message_id"],
+            activity["tier"],
+            activity["fecha"],
+            activity["hora_inicio"],
+            activity["hora_fin"],
+            activity["maseo"],
+        )
+
+        await data["message"].edit(
+            content=None,
+            embed=render_activity_message(activity),
+        )
+
+        try:
+            await ctx.channel.edit(
+                name=f"Avaloniana {activity['tier']} - {activity['fecha']} {activity['hora_inicio']}"
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        await self.update_auto_calendar_message()
+
+        await ctx.send(embed=success_embed(
+            "Avaloniana actualizada",
+            (
+                f"✏️ **{campo.title()}** → `{valor}`\n"
+                "El mensaje principal y la base de datos ya están actualizados."
+            ),
+        ))
+
+    @commands.command(name="deleteava", aliases=["eliminarava", "borrarava"])
+    async def delete_ava(self, ctx):
+        """Elimina la Avaloniana activa desde su hilo."""
+        if ctx.channel.id not in activity_messages:
+            restored = await self.restore_activity_by_thread(ctx.channel.id)
+            if not restored:
+                await ctx.send(embed=error_embed(
+                    "Usa este comando dentro del hilo de una Avaloniana activa.",
+                    "Avaloniana no encontrada",
+                ))
+                return
+
+        data = activity_messages[ctx.channel.id]
+        activity = data["activity"]
+
+        if not self._can_manage_activity(ctx, activity):
+            await ctx.send(embed=error_embed(
+                "Solo el caller o un rol autorizado puede eliminar esta Avaloniana.",
+                "Sin permisos",
+            ))
+            return
+
+        parent_channel = data["message"].channel
+        summary = (
+            f"⚔️ **{activity['tier']}** · {activity['fecha']} · "
+            f"{activity['hora_inicio']}-{activity['hora_fin']}"
+        )
+
+        database.delete_scheduled_ava(data["message_id"])
+        activity_messages.pop(ctx.channel.id, None)
+        await self.update_auto_calendar_message()
+
+        try:
+            await data["message"].delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            await parent_channel.send(embed=success_embed(
+                "Avaloniana eliminada",
+                f"🗑️ {summary}\nEliminada por {ctx.author.mention}.",
+            ))
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            await ctx.channel.delete(reason=f"Avaloniana eliminada por {ctx.author}")
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -836,7 +1036,8 @@ class Activities(commands.Cog):
             embed.add_field(
                 name=f"⚔️ {tier} | {date}",
                 value=(
-                    f"🕒 **{start_time} - {end_time}**\n"
+                    f"🕒 **{start_time} - {end_time} España**\n"
+                    f"🌍 **{madrid_to_utc(date, start_time)} - {madrid_to_utc(date, end_time)} UTC**\n"
                     f"👤 Caller: **{caller_name}**\n"
                     f"📍 Maseo: **{maseo}**\n"
                     f"🧵 <#{thread_id}>"
@@ -1066,7 +1267,8 @@ class Activities(commands.Cog):
                         (
                             "⏰ **Recordatorio de Avaloniana**\n\n"
                             f"Tier: **{tier}**\n"
-                            f"Hora: **{start_time} - {end_time}**\n"
+                            f"Hora: **{start_time} - {end_time} España**\n"
+                            f"UTC: **{madrid_to_utc(date, start_time)} - {madrid_to_utc(date, end_time)} UTC**\n"
                             f"Maseo: **{maseo}**\n"
                             f"Caller: <@{creator_id}>"
                         )
