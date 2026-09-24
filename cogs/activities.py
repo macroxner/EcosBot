@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import discord
 from discord.ext import commands, tasks
@@ -44,6 +45,13 @@ ROLE_ALIASES = {
 }
 
 
+def _contains_role_alias(text, alias):
+    # Coincidencia por palabra/frase completa. Evita, por ejemplo, que
+    # el alias corto "sc" de Shadowcaller coincida dentro de "scout".
+    pattern = rf"(?<!\w){re.escape(alias.lower())}(?!\w)"
+    return re.search(pattern, text.lower()) is not None
+
+
 def normalize_role(text):
     text = text.lower().strip()
 
@@ -52,13 +60,13 @@ def normalize_role(text):
 
     if not text.startswith("x"):
         return None
-    
-    if ("fill" in text):
+
+    if _contains_role_alias(text, "fill"):
         return "Fill"
 
     for role, aliases in ROLE_ALIASES.items():
         for alias in aliases:
-            if alias in text:
+            if _contains_role_alias(text, alias):
                 return role
 
     return None
@@ -75,9 +83,10 @@ def parse_fill_avoid(text):
 
     for role, aliases in ROLE_ALIASES.items():
         for alias in aliases:
-            if alias in avoid_text:
+            if _contains_role_alias(avoid_text, alias):
                 if role not in avoid:
                     avoid.append(role)
+                break
 
     return avoid
 
